@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StatInfoModal } from "./stat-info-modal";
+import { StreakVisualization } from "./streak-visualization";
+import { ActivityVisualization } from "./activity-visualization";
 import type { MomentumData } from "@/server/services/analytics.service";
 
 interface MomentumCardProps {
@@ -11,8 +14,17 @@ interface MomentumCardProps {
   className?: string;
 }
 
+interface StatInfo {
+  title: string;
+  description: string;
+  value?: string;
+  visual?: React.ReactNode;
+}
+
 export function MomentumCard({ momentum, className }: MomentumCardProps) {
   const [displayScore, setDisplayScore] = useState(0);
+  const [selectedStat, setSelectedStat] = useState<StatInfo | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -28,6 +40,11 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
     return () => clearTimeout(timer);
   }, [momentum.score]);
 
+  const handleStatClick = (stat: StatInfo) => {
+    setSelectedStat(stat);
+    setIsModalOpen(true);
+  };
+
   const deltaPositive = momentum.weeklyDelta >= 0;
   const deltaLabel    = deltaPositive ? `+${momentum.weeklyDelta} pts` : `${momentum.weeklyDelta} pts`;
 
@@ -40,34 +57,48 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
 
   const activeWeekdays = momentum.weeklyActivity.filter((d) => d.hasLog).length;
 
-  const stats = [
+  const statClickHandlers = [
     {
       emoji: "🔥",
       value: `${momentum.streakDays}d`,
-      label: "Day Streak",
-      sublabel: "consecutive days active",
-      highlight: momentum.streakDays >= 7,
+      label: "Streak",
+      onClick: () => handleStatClick({
+        title: "Your Streak",
+        description: "A streak is the number of consecutive days you've completed at least one action towards your goals. Each day you show up, you extend your streak. Consistency is everything.",
+        value: `${momentum.streakDays} days`,
+        visual: <StreakVisualization currentStreak={momentum.streakDays} />
+      }),
     },
     {
       emoji: "📅",
       value: `${activeWeekdays}/7`,
       label: "This Week",
-      sublabel: "days you showed up",
-      highlight: false,
+      onClick: () => handleStatClick({
+        title: "This Week's Activity",
+        description: "Shows how many days this week you've taken action on your goals. Aim for consistency throughout the week.",
+        value: `${activeWeekdays} days active`,
+        visual: <ActivityVisualization weeklyActivity={momentum.weeklyActivity} />
+      }),
     },
     {
       emoji: "✅",
       value: `${Math.round(momentum.completionRate * 100)}%`,
       label: "Done Rate",
-      sublabel: "intentions completed",
-      highlight: momentum.completionRate >= 0.8,
+      onClick: () => handleStatClick({
+        title: "Done Rate",
+        description: "The percentage of your daily intentions you've completed. This measures follow-through and commitment to your goals.",
+        value: `${Math.round(momentum.completionRate * 100)}%`
+      }),
     },
     {
       emoji: deltaPositive ? "📈" : "📉",
       value: deltaLabel,
       label: "vs Last Week",
-      sublabel: deltaPositive ? "momentum gained" : "momentum lost",
-      highlight: deltaPositive,
+      onClick: () => handleStatClick({
+        title: deltaPositive ? "Momentum Gained" : "Momentum Lost",
+        description: `Your momentum score this week compared to last week. ${deltaPositive ? "You're building consistent progress." : "Time to rebuild your momentum."}`,
+        value: deltaLabel
+      }),
     },
   ];
 
@@ -82,7 +113,14 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
       <div className="p-5 sm:p-6">
         {/* ── Top row: score + ring ─── */}
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
+          <button
+            onClick={() => handleStatClick({
+              title: "Momentum Score",
+              description: "Your momentum score measures your progress and consistency across all your goals. It combines your daily streaks, completion rates, and weekly engagement. A higher score means you're building sustainable habits.",
+              value: `${displayScore} / 100`
+            })}
+            className="min-w-0 cursor-pointer transition-opacity hover:opacity-80"
+          >
             <p className="section-label" style={{ color: "rgba(199,175,122,0.75)" }}>
               Momentum Score
             </p>
@@ -95,11 +133,18 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
             <p className="mt-1.5 font-mono text-xs text-[#E8C97A] sm:text-sm">
               {scoreContext}
             </p>
-          </div>
+          </button>
 
           {/* Score arc */}
           <div className="hidden sm:flex flex-shrink-0 flex-col items-end gap-2">
-            <div className="relative h-16 w-16">
+            <div
+              className="relative h-16 w-16 cursor-pointer transition-opacity hover:opacity-80"
+              onClick={() => handleStatClick({
+                title: "Momentum Score",
+                description: "Your momentum score measures your progress and consistency across all your goals. It combines your daily streaks, completion rates, and weekly engagement. A higher score means you're building sustainable habits.",
+                value: `${displayScore} / 100`
+              })}
+            >
               <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
                 <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
                 <circle
@@ -133,27 +178,25 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
 
         {/* ── Stats grid ─── */}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {stats.map((s) => (
-            <div
+          {statClickHandlers.map((s) => (
+            <button
               key={s.label}
-              className="flex flex-col gap-0.5 rounded-xl border border-white/6 bg-white/4 px-3 py-2.5"
+              onClick={s.onClick}
+              className="flex flex-col gap-0.5 rounded-xl border border-white/6 bg-white/4 px-3 py-2.5 transition-all hover:bg-white/6 hover:border-white/10 cursor-pointer"
             >
-              <div className="flex items-center gap-1.5">
-                <span className="text-base leading-none">{s.emoji}</span>
+              <div className="flex items-center justify-between gap-1.5">
                 <span className={cn(
-                  "font-serif text-base font-semibold sm:text-lg",
-                  s.highlight ? "text-[#E8C97A]" : "text-white"
+                  "font-serif font-semibold sm:text-lg",
+                  momentum.streakDays >= 7 ? "text-[#E8C97A]" : "text-white"
                 )}>
                   {s.value}
                 </span>
+                <span className="text-base leading-none">{s.emoji}</span>
               </div>
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.3)" }}>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-left" style={{ color: "rgba(255,255,255,0.3)" }}>
                 {s.label}
               </span>
-              <span className="text-[10px] leading-tight text-white/20 hidden sm:block">
-                {s.sublabel}
-              </span>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -192,7 +235,7 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
           </div>
 
           {/* Motivation + analytics link */}
-          <div className="mt-3 flex items-start justify-between gap-4">
+          <div className="mt-3 flex items-start justify-between gap-4 hidden">
             <p className="text-sm leading-snug text-white/55 line-clamp-2">
               {momentum.motivation}
             </p>
@@ -205,6 +248,13 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
           </div>
         </div>
       </div>
+
+      {/* Modal */}
+      <StatInfoModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        stat={selectedStat}
+      />
     </section>
   );
 }
