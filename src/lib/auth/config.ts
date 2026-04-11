@@ -117,16 +117,26 @@ if (facebookConfigured) {
   );
 }
 
+const authAdapter = process.env["DATABASE_URL"]
+  ? DrizzleAdapter(
+      db,
+      {
+        usersTable: users,
+        accountsTable: accounts,
+        sessionsTable: sessions,
+        verificationTokensTable: verificationTokens,
+      } as unknown as never
+    )
+  : undefined;
+
+if (!process.env["DATABASE_URL"]) {
+  console.warn(
+    "[auth] DATABASE_URL is not configured. Auth persistence is disabled during build."
+  );
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: DrizzleAdapter(
-    db,
-    {
-      usersTable: users,
-      accountsTable: accounts,
-      sessionsTable: sessions,
-      verificationTokensTable: verificationTokens,
-    } as unknown as never
-  ),
+  adapter: authAdapter,
 
   session: {
     strategy: "jwt",
