@@ -76,6 +76,7 @@ export const createMomentSchema = z.object({
     .min(1, "Moment text cannot be empty")
     .max(1000, "Moment must be under 1000 characters"),
   visibility: z.enum(["private", "circle", "public"]).default("circle"),
+  isPerseverance: z.boolean().default(false),
 });
 
 export type CreateGoalInput = z.infer<typeof createGoalSchema>;

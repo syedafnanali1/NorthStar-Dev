@@ -1,9 +1,10 @@
 import { Resend } from "resend";
+import { getAppUrl } from "@/lib/app-url";
 
 const RESEND_API_KEY = process.env["RESEND_API_KEY"];
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 const APP_NAME = process.env["NEXT_PUBLIC_APP_NAME"] ?? "NorthStar";
-const APP_URL = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
+const APP_URL = getAppUrl();
 const FROM = process.env["EMAIL_FROM"] ?? "North Star <hello@northstar.app>";
 
 function ensureResend() {
@@ -46,18 +47,28 @@ async function sendWithRetry(payload: EmailPayload): Promise<void> {
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      await ensureResend().emails.send({
+      const result = await ensureResend().emails.send({
         from: FROM,
         to: payload.to,
         subject: payload.subject,
         html: payload.html,
         text: payload.text,
       });
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      if (!result.data?.id) {
+        throw new Error("Email provider did not return a message id.");
+      }
+
       console.info("[auth-email] sent", {
         to: payload.to,
         subject: payload.subject,
         status: "sent",
         attempt,
+        emailId: result.data.id,
       });
       return;
     } catch (error) {

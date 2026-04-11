@@ -531,6 +531,8 @@ export const moments = pgTable(
     text: text("text").notNull(),
     // Visibility: 'private' | 'circle' | 'public'
     visibility: text("visibility").default("circle").notNull(),
+    // True when user marks this as a perseverance moment ("didn't feel like it but did it anyway")
+    isPerseverance: boolean("is_perseverance").default(false).notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => ({

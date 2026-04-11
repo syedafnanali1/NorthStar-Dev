@@ -1,6 +1,7 @@
 // src/app/auth/register/page.tsx
 import type { Metadata } from "next";
 import { redirectIfAuthenticated } from "@/lib/auth/helpers";
+import { getAuthConfigStatus } from "@/lib/env-checks";
 import { RegisterForm } from "./register-form";
 
 export const metadata: Metadata = { title: "Create Account" };
@@ -12,6 +13,7 @@ export default async function RegisterPage({
 }) {
   await redirectIfAuthenticated("/dashboard");
   const { invite } = await searchParams;
+  const authConfigStatus = getAuthConfigStatus();
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#0E0C0A]">
@@ -50,7 +52,7 @@ export default async function RegisterPage({
               Create your account.
             </p>
             <div className="mt-8">
-              <RegisterForm inviteToken={invite} />
+              <RegisterForm inviteToken={invite} initialProviderStatus={authConfigStatus} />
             </div>
             <p className="mt-6 text-center text-sm text-white/35">
               Already have an account?{" "}

@@ -5,7 +5,13 @@ import Facebook from "next-auth/providers/facebook";
 import Google from "next-auth/providers/google";
 import { and, eq, gt, sql } from "drizzle-orm";
 
-import { accounts, sessions, users, verificationTokens } from "@/drizzle/schema";
+import { users, verificationTokens } from "@/drizzle/schema";
+import {
+  authAccountsTable,
+  authSessionsTable,
+  authUsersTable,
+  authVerificationTokensTable,
+} from "@/lib/auth/adapter-schema";
 import {
   clearFailedLogins,
   isUserLocked,
@@ -15,8 +21,9 @@ import {
 import { createOtpChallenge } from "@/lib/auth/security";
 import { db } from "@/lib/db";
 import { authEmailService } from "@/lib/email/auth";
+import { getAppUrl } from "@/lib/app-url";
 import {
-  isFacebookOAuthConfigured,
+  isFacebookOAuthAvailable,
   isGoogleOAuthConfigured,
 } from "@/lib/env-checks";
 import { loginSchema } from "@/lib/validators/auth";
@@ -26,7 +33,7 @@ const googleConfigured = isGoogleOAuthConfigured(
   process.env["GOOGLE_CLIENT_SECRET"]
 );
 
-const facebookConfigured = isFacebookOAuthConfigured(
+const facebookConfigured = isFacebookOAuthAvailable(
   process.env["FACEBOOK_CLIENT_ID"],
   process.env["FACEBOOK_CLIENT_SECRET"]
 );
@@ -36,7 +43,7 @@ if (!googleConfigured) {
 }
 
 if (!facebookConfigured) {
-  console.warn("[auth] Facebook OAuth is not configured. Facebook sign-in is disabled.");
+  console.warn("[auth] Facebook OAuth is unavailable. Facebook sign-in is disabled.");
 }
 
 const providers = [
@@ -121,10 +128,10 @@ const authAdapter = process.env["DATABASE_URL"]
   ? DrizzleAdapter(
       db,
       {
-        usersTable: users,
-        accountsTable: accounts,
-        sessionsTable: sessions,
-        verificationTokensTable: verificationTokens,
+        usersTable: authUsersTable,
+        accountsTable: authAccountsTable,
+        sessionsTable: authSessionsTable,
+        verificationTokensTable: authVerificationTokensTable,
       } as unknown as never
     )
   : undefined;
@@ -206,7 +213,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         : "google";
 
       const verifyPath = `/auth/verify-email?mode=signin&provider=${encodeURIComponent(provider)}&email=${encodeURIComponent(user.email)}`;
-      const appUrl = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
+      const appUrl = getAppUrl();
+
+      let emailSendSuccess = false;
 
       try {
         const otpChallenge = await createOtpChallenge({
@@ -224,17 +233,49 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (otpChallenge.status === "created" && otpChallenge.otp) {
           const verifyUrl = `${appUrl}${verifyPath}&code=${encodeURIComponent(otpChallenge.otp)}`;
-          await authEmailService.sendSignInStepUpOtp({
-            to: user.email,
-            otp: otpChallenge.otp,
-            verifyUrl,
-            device: `${provider} OAuth`,
-            location: "Unknown location",
-            timestamp: now.toISOString(),
-          });
+          try {
+            await authEmailService.sendSignInStepUpOtp({
+              to: user.email,
+              otp: otpChallenge.otp,
+              verifyUrl,
+              device: `${provider} OAuth`,
+              location: "Unknown location",
+              timestamp: now.toISOString(),
+            });
+            emailSendSuccess = true;
+            console.info("[auth] oauth step-up otp email sent successfully", {
+              userId: user.id,
+              email: user.email,
+              provider,
+            });
+          } catch (emailError) {
+            console.error(
+              "[auth] oauth step-up otp email send failed - user may not receive verification email",
+              {
+                userId: user.id,
+                email: user.email,
+                provider,
+                error: emailError instanceof Error ? emailError.message : String(emailError),
+              }
+            );
+            // Still allow the sign-in flow to continue, user can resend verification
+          }
         }
       } catch (error) {
-        console.error("[auth] oauth step-up otp send failed", error);
+        console.error("[auth] oauth step-up otp creation failed", {
+          userId: user.id,
+          email: user.email,
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (!emailSendSuccess) {
+        console.warn("[auth] google oauth sign-in verification email not sent - user needs to check spam or resend", {
+          userId: user.id,
+          email: user.email,
+          provider,
+        });
       }
 
       return verifyPath;

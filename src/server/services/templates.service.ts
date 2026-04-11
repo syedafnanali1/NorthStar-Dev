@@ -167,6 +167,83 @@ const DEFAULT_TEMPLATE_LIBRARY: TemplateLibraryItem[] = Object.entries(PACKS).fl
     }))
 );
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String(error.code) : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return code === "42703" || /column .* does not exist/i.test(message);
+}
+
+function mapLegacyTemplateRow(row: {
+  id: string;
+  title: string;
+  category: GoalCategory;
+  emoji: string;
+  color: string;
+  description: string;
+  targetValue: number | null;
+  unit: string | null;
+  suggestedMilestones: string[] | null;
+  suggestedTasks: string[] | null;
+  timeframeDays: number | null;
+  isOfficial: boolean;
+  defaultWhy: string | null;
+  defaultTasks: string[] | null;
+}): TemplateLibraryItem {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    emoji: row.emoji,
+    color: row.color,
+    description: row.description,
+    targetValue: row.targetValue ?? null,
+    unit: row.unit ?? null,
+    suggestedMilestones: row.suggestedMilestones ?? [],
+    suggestedTasks: row.suggestedTasks ?? [],
+    motivationalPrompts: row.defaultWhy ? makePrompt(row.title, row.defaultWhy) : [],
+    timeframeDays: row.timeframeDays ?? null,
+    isOfficial: row.isOfficial,
+    isCommunity: false,
+    submissionStatus: "approved",
+    defaultWhy: row.defaultWhy ?? null,
+    defaultTasks: row.defaultTasks ?? [],
+  };
+}
+
+async function listLegacyTemplates(options: {
+  categories: GoalCategory[];
+  limit: number;
+}): Promise<TemplateLibraryItem[]> {
+  const rows = await db
+    .select({
+      id: goalTemplates.id,
+      title: goalTemplates.title,
+      category: goalTemplates.category,
+      emoji: goalTemplates.emoji,
+      color: goalTemplates.color,
+      description: goalTemplates.description,
+      targetValue: goalTemplates.targetValue,
+      unit: goalTemplates.unit,
+      suggestedMilestones: goalTemplates.suggestedMilestones,
+      suggestedTasks: goalTemplates.suggestedTasks,
+      timeframeDays: goalTemplates.timeframeDays,
+      isOfficial: goalTemplates.isOfficial,
+      defaultWhy: goalTemplates.defaultWhy,
+      defaultTasks: goalTemplates.defaultTasks,
+    })
+    .from(goalTemplates)
+    .where(
+      options.categories.length
+        ? inArray(goalTemplates.category, options.categories)
+        : sql`true`
+    )
+    .orderBy(desc(goalTemplates.isOfficial), desc(goalTemplates.createdAt))
+    .limit(options.limit);
+
+  return rows.map(mapLegacyTemplateRow);
+}
+
 export const templatesService = {
   getDefaultTemplates(): TemplateLibraryItem[] {
     return DEFAULT_TEMPLATE_LIBRARY;
@@ -185,47 +262,62 @@ export const templatesService = {
       ? DEFAULT_TEMPLATE_LIBRARY.filter((template) => categories.includes(template.category))
       : DEFAULT_TEMPLATE_LIBRARY;
 
-    const dbRows = await db
-      .select()
-      .from(goalTemplates)
-      .where(
-        and(
-          categories.length
-            ? inArray(goalTemplates.category, categories)
-            : sql`true`,
-          or(
-            eq(goalTemplates.submissionStatus, "approved"),
-            includePendingForUserId
-              ? and(
-                  eq(goalTemplates.createdByUserId, includePendingForUserId),
-                  eq(goalTemplates.submissionStatus, "pending")
-                )
-              : eq(goalTemplates.submissionStatus, "approved")
+    let dbMapped: TemplateLibraryItem[] = [];
+
+    try {
+      const dbRows = await db
+        .select()
+        .from(goalTemplates)
+        .where(
+          and(
+            categories.length
+              ? inArray(goalTemplates.category, categories)
+              : sql`true`,
+            or(
+              eq(goalTemplates.submissionStatus, "approved"),
+              includePendingForUserId
+                ? and(
+                    eq(goalTemplates.createdByUserId, includePendingForUserId),
+                    eq(goalTemplates.submissionStatus, "pending")
+                  )
+                : eq(goalTemplates.submissionStatus, "approved")
+            )
           )
         )
-      )
-      .orderBy(desc(goalTemplates.isOfficial), desc(goalTemplates.usageCount))
-      .limit(limit);
+        .orderBy(desc(goalTemplates.isOfficial), desc(goalTemplates.usageCount))
+        .limit(limit);
 
-    const dbMapped: TemplateLibraryItem[] = dbRows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      category: row.category,
-      emoji: row.emoji,
-      color: row.color,
-      description: row.description,
-      targetValue: row.targetValue ?? null,
-      unit: row.unit ?? null,
-      suggestedMilestones: row.suggestedMilestones ?? [],
-      suggestedTasks: row.suggestedTasks ?? [],
-      motivationalPrompts: row.motivationalPrompts ?? [],
-      timeframeDays: row.timeframeDays ?? null,
-      isOfficial: row.isOfficial,
-      isCommunity: row.isCommunity,
-      submissionStatus: row.submissionStatus,
-      defaultWhy: row.defaultWhy ?? null,
-      defaultTasks: row.defaultTasks ?? [],
-    }));
+      dbMapped = dbRows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        category: row.category,
+        emoji: row.emoji,
+        color: row.color,
+        description: row.description,
+        targetValue: row.targetValue ?? null,
+        unit: row.unit ?? null,
+        suggestedMilestones: row.suggestedMilestones ?? [],
+        suggestedTasks: row.suggestedTasks ?? [],
+        motivationalPrompts: row.motivationalPrompts ?? [],
+        timeframeDays: row.timeframeDays ?? null,
+        isOfficial: row.isOfficial,
+        isCommunity: row.isCommunity,
+        submissionStatus: row.submissionStatus,
+        defaultWhy: row.defaultWhy ?? null,
+        defaultTasks: row.defaultTasks ?? [],
+      }));
+    } catch (error) {
+      if (!isMissingColumnError(error)) {
+        throw error;
+      }
+
+      console.warn(
+        "[templates] Falling back to legacy goal_templates columns. Run `npm run db:push` to sync the database schema.",
+        error
+      );
+
+      dbMapped = await listLegacyTemplates({ categories, limit });
+    }
 
     const byTitle = new Map<string, TemplateLibraryItem>();
     for (const item of [...official, ...dbMapped]) {

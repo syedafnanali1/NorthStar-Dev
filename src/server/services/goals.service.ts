@@ -26,6 +26,7 @@ import { friendActivityService } from "./friend-activity.service";
 import { xpService } from "./xp.service";
 import { subscriptionsService } from "./subscriptions.service";
 import { integrationsService } from "./integrations.service";
+import { notificationsService } from "./notifications.service";
 
 export interface GoalWithDetails extends Goal {
   tasks: GoalTask[];
@@ -298,6 +299,15 @@ export const goalsService = {
           notifyFriends: true,
           link: `/goals/${goalId}`,
         });
+        // In-app milestone notification
+        const milestoneEmoji = milestone === 100 ? "🏆" : milestone === 75 ? "🔥" : milestone === 50 ? "⚡" : "🌟";
+        void notificationsService.createNotification(
+          userId,
+          "friend_milestone",
+          `${milestoneEmoji} ${milestone}% milestone reached!`,
+          `You've hit ${milestone}% on "${goal.title}". Keep going — you're making it happen.`,
+          `/goals/${goalId}`
+        );
       }
     }
 
@@ -378,6 +388,7 @@ export const goalsService = {
         userId,
         text: input.text,
         visibility: input.visibility,
+        isPerseverance: input.isPerseverance ?? false,
       })
       .returning();
 

@@ -3,12 +3,13 @@
 // All email sending logic lives here
 
 import { Resend } from "resend";
+import { getAppUrl } from "@/lib/app-url";
 
 const RESEND_API_KEY = process.env["RESEND_API_KEY"];
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 const FROM = process.env["EMAIL_FROM"] ?? "North Star <hello@northstar.app>";
 const APP_NAME = process.env["NEXT_PUBLIC_APP_NAME"] ?? "North Star";
-const APP_URL = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
+const APP_URL = getAppUrl();
 
 function ensureResend() {
   if (!resend) {

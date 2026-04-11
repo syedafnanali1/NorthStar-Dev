@@ -20,14 +20,10 @@ function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-export function MomentModal({
-  goalId,
-  goalTitle,
-  open,
-  onClose,
-}: MomentModalProps) {
-  const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
+export function MomentModal({ goalId, goalTitle, open, onClose }: MomentModalProps) {
+  const [text, setText]                   = useState("");
+  const [isPerseverance, setIsPerseverance] = useState(false);
+  const [saving, setSaving]               = useState(false);
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -35,33 +31,34 @@ export function MomentModal({
   const overLimit = wordCount > MAX_WORDS;
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
-
+    if (!open) return;
     const timeout = window.setTimeout(() => textareaRef.current?.focus(), 160);
     return () => window.clearTimeout(timeout);
   }, [open]);
 
-  const handleSave = async () => {
-    if (!text.trim() || overLimit || saving) {
-      return;
+  // Reset state when closing
+  useEffect(() => {
+    if (!open) {
+      setText("");
+      setIsPerseverance(false);
     }
+  }, [open]);
 
+  const handleSave = async () => {
+    if (!text.trim() || overLimit || saving) return;
     setSaving(true);
     try {
       const response = await fetch(`/api/goals/${goalId}/moments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), visibility: "circle" }),
+        body: JSON.stringify({
+          text: text.trim(),
+          visibility: "circle",
+          isPerseverance,
+        }),
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to save moment");
-      }
-
-      toast("Moment saved ✓");
-      setText("");
+      if (!response.ok) throw new Error("Failed to save moment");
+      toast(isPerseverance ? "💪 Perseverance moment saved!" : "Moment saved ✓");
       onClose();
       router.refresh();
     } catch {
@@ -78,12 +75,8 @@ export function MomentModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[70] flex items-end bg-[rgba(26,23,20,0.56)] p-0 backdrop-blur-md lg:items-center lg:justify-center lg:p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              onClose();
-            }
-          }}
+          className="fixed inset-0 z-[70] flex items-end bg-[rgba(26,23,20,0.56)] backdrop-blur-md lg:items-center lg:justify-center lg:p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
             initial={{ y: 24, opacity: 0, scale: 0.98 }}
@@ -92,38 +85,39 @@ export function MomentModal({
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="mobile-sheet w-full bg-cream-paper shadow-modal lg:max-w-xl"
           >
+            {/* Header */}
             <div className="flex items-center justify-between border-b border-cream-dark px-5 py-4 lg:px-6">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-muted">
-                  Add a Moment
-                </p>
-                <h2 className="mt-2 text-2xl font-serif font-semibold text-ink">
-                  Add a Moment
+                <p className="section-label">✨ Add a Moment</p>
+                <h2 className="mt-1 font-serif text-xl font-semibold text-ink">
+                  Capture what happened
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-cream-dark bg-white/80 text-ink-muted transition-colors hover:text-ink"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-cream-dark bg-white/80 text-ink-muted transition-colors hover:text-ink"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="space-y-5 px-5 py-5 lg:px-6 lg:py-6">
+            {/* Body */}
+            <div className="space-y-4 px-5 py-5 lg:px-6">
               <p className="text-sm leading-6 text-ink-soft">
-                Capture what happened around <strong>{goalTitle}</strong>. Keep it short,
-                honest, and specific.
+                Something meaningful happened around{" "}
+                <strong className="text-ink">{goalTitle}</strong>. Keep it
+                honest and specific.
               </p>
 
               <textarea
                 ref={textareaRef}
                 value={text}
-                onChange={(event) => setText(event.target.value)}
-                placeholder="What happened today? What shifted?"
+                onChange={(e) => setText(e.target.value)}
+                placeholder="What happened? What shifted? What did you notice?"
                 className={cn(
-                  "h-44 w-full resize-none rounded-[1.5rem] border bg-white/80 p-4 text-sm italic text-ink outline-none transition-all placeholder:text-ink-muted",
+                  "h-36 w-full resize-none rounded-2xl border bg-white/80 p-4 text-sm italic text-ink outline-none transition-all placeholder:text-ink-muted",
                   overLimit
                     ? "border-rose focus:border-rose"
                     : "border-cream-dark focus:border-ink-muted"
@@ -134,14 +128,49 @@ export function MomentModal({
                 <span className={cn(overLimit ? "text-rose" : "text-ink-muted")}>
                   {wordCount} / {MAX_WORDS} words
                 </span>
-                {overLimit ? <span className="text-rose">Keep it under 100 words.</span> : null}
+                {overLimit && <span className="text-rose">Keep it under 100 words.</span>}
               </div>
 
-              <div className="flex flex-col-reverse gap-3 lg:flex-row lg:justify-end">
+              {/* Perseverance toggle */}
+              <button
+                type="button"
+                onClick={() => setIsPerseverance((v) => !v)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all",
+                  isPerseverance
+                    ? "border-gold/40 bg-gold/8 text-ink"
+                    : "border-cream-dark bg-white/60 text-ink-muted hover:border-ink-muted/40 hover:text-ink"
+                )}
+              >
+                <span className="text-xl">{isPerseverance ? "💪" : "🤍"}</span>
+                <div className="min-w-0 flex-1">
+                  <p className={cn("text-sm font-medium", isPerseverance && "text-ink")}>
+                    Moment of grit
+                  </p>
+                  <p className="mt-0.5 text-xs text-ink-muted leading-snug">
+                    I didn&apos;t feel like doing it — but I showed up anyway
+                  </p>
+                </div>
+                <div className={cn(
+                  "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all",
+                  isPerseverance
+                    ? "border-gold bg-gold text-white"
+                    : "border-ink-muted/40"
+                )}>
+                  {isPerseverance && (
+                    <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 12 12">
+                      <path d="M10 3L5 8.5 2 5.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                    </svg>
+                  )}
+                </div>
+              </button>
+
+              {/* Actions */}
+              <div className="flex flex-col-reverse gap-3 pt-1 lg:flex-row lg:justify-end">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="btn-secondary min-h-[48px] rounded-2xl px-5"
+                  className="btn-secondary min-h-[44px] rounded-2xl px-5"
                 >
                   Cancel
                 </button>
@@ -149,9 +178,9 @@ export function MomentModal({
                   type="button"
                   onClick={handleSave}
                   disabled={saving || overLimit || !text.trim()}
-                  className="btn-primary min-h-[48px] rounded-2xl px-5 disabled:opacity-40"
+                  className="btn-primary min-h-[44px] rounded-2xl px-5 disabled:opacity-40"
                 >
-                  {saving ? "Saving..." : "Save"}
+                  {saving ? "Saving…" : isPerseverance ? "💪 Save Grit Moment" : "Save Moment"}
                 </button>
               </div>
             </div>

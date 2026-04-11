@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, TrendingUp } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MomentumData } from "@/server/services/analytics.service";
 
@@ -28,10 +28,8 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
     return () => clearTimeout(timer);
   }, [momentum.score]);
 
-  const deltaLabel =
-    momentum.weeklyDelta >= 0
-      ? `+${momentum.weeklyDelta} pts`
-      : `${momentum.weeklyDelta} pts`;
+  const deltaPositive = momentum.weeklyDelta >= 0;
+  const deltaLabel    = deltaPositive ? `+${momentum.weeklyDelta} pts` : `${momentum.weeklyDelta} pts`;
 
   const scoreContext =
     momentum.score >= 80 ? "Exceptional. Keep this going." :
@@ -42,8 +40,38 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
 
   const activeWeekdays = momentum.weeklyActivity.filter((d) => d.hasLog).length;
 
+  const stats = [
+    {
+      emoji: "🔥",
+      value: `${momentum.streakDays}d`,
+      label: "Day Streak",
+      sublabel: "consecutive days active",
+      highlight: momentum.streakDays >= 7,
+    },
+    {
+      emoji: "📅",
+      value: `${activeWeekdays}/7`,
+      label: "This Week",
+      sublabel: "days you showed up",
+      highlight: false,
+    },
+    {
+      emoji: "✅",
+      value: `${Math.round(momentum.completionRate * 100)}%`,
+      label: "Done Rate",
+      sublabel: "intentions completed",
+      highlight: momentum.completionRate >= 0.8,
+    },
+    {
+      emoji: deltaPositive ? "📈" : "📉",
+      value: deltaLabel,
+      label: "vs Last Week",
+      sublabel: deltaPositive ? "momentum gained" : "momentum lost",
+      highlight: deltaPositive,
+    },
+  ];
+
   return (
-    /* ── Single unified dark card, responsive across all widths ── */
     <section
       className={cn(
         "overflow-hidden rounded-2xl border border-[#2A2522] bg-[#171411] text-white",
@@ -51,15 +79,14 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
         className
       )}
     >
-      <div className="p-5 sm:p-6 lg:p-5 xl:p-6">
-        {/* ── Top row: score + delta ───────────────────────── */}
-        <div className="flex items-start justify-between gap-4 sm:gap-6">
-          {/* Score block */}
+      <div className="p-5 sm:p-6">
+        {/* ── Top row: score + ring ─── */}
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="section-label" style={{ color: "rgba(199,175,122,0.75)" }}>
               Momentum Score
             </p>
-            <div className="mt-2 flex items-end gap-2 sm:gap-3">
+            <div className="mt-2 flex items-end gap-2">
               <span className="font-serif text-4xl font-semibold leading-none text-white sm:text-5xl">
                 {displayScore}
               </span>
@@ -70,9 +97,8 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
             </p>
           </div>
 
-          {/* Score ring — shown sm+ */}
+          {/* Score arc */}
           <div className="hidden sm:flex flex-shrink-0 flex-col items-end gap-2">
-            {/* Compact arc */}
             <div className="relative h-16 w-16">
               <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
                 <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
@@ -97,7 +123,7 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
           </div>
         </div>
 
-        {/* ── Progress bar ─────────────────────────────────── */}
+        {/* ── Progress bar ─── */}
         <div className="mt-4 h-1 overflow-hidden rounded-full bg-[repeating-linear-gradient(to_right,rgba(255,255,255,0.12),rgba(255,255,255,0.12)_6px,transparent_6px,transparent_12px)]">
           <div
             className="h-full rounded-full bg-[#E8C97A] transition-all duration-700"
@@ -105,40 +131,41 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
           />
         </div>
 
-        {/* ── Stats row ────────────────────────────────────── */}
+        {/* ── Stats grid ─── */}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[
-            { label: "Streak",     value: `${momentum.streakDays}d`          },
-            { label: "This week",  value: `${activeWeekdays}/7`              },
-            { label: "Completion", value: `${Math.round(momentum.completionRate * 100)}%` },
-            { label: "vs last wk", value: deltaLabel, highlight: momentum.weeklyDelta >= 0 },
-          ].map((s) => (
+          {stats.map((s) => (
             <div
               key={s.label}
               className="flex flex-col gap-0.5 rounded-xl border border-white/6 bg-white/4 px-3 py-2.5"
             >
-              <span className={cn(
-                "font-serif text-base font-semibold sm:text-lg",
-                s.highlight ? "text-[#E8C97A]" : "text-white"
-              )}>
-                {s.value}
-              </span>
-              <span className="section-label" style={{ color: "rgba(255,255,255,0.3)" }}>
+              <div className="flex items-center gap-1.5">
+                <span className="text-base leading-none">{s.emoji}</span>
+                <span className={cn(
+                  "font-serif text-base font-semibold sm:text-lg",
+                  s.highlight ? "text-[#E8C97A]" : "text-white"
+                )}>
+                  {s.value}
+                </span>
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "rgba(255,255,255,0.3)" }}>
                 {s.label}
+              </span>
+              <span className="text-[10px] leading-tight text-white/20 hidden sm:block">
+                {s.sublabel}
               </span>
             </div>
           ))}
         </div>
 
-        {/* ── Weekly bar chart ─────────────────────────────── */}
+        {/* ── Weekly bar chart ─── */}
         <div className="mt-4">
           <div className="flex items-end gap-1 sm:gap-1.5">
             {momentum.weeklyActivity.map((day, index) => {
               const height = day.tasksTotal > 0
                 ? Math.max(6, (day.tasksCompleted / day.tasksTotal) * 48)
                 : 6;
-              const isToday = index === momentum.weeklyActivity.length - 1;
-              const weekday = new Date(`${day.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" });
+              const isToday  = index === momentum.weeklyActivity.length - 1;
+              const weekday  = new Date(`${day.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" });
 
               return (
                 <div key={day.date} className="flex flex-1 flex-col items-center gap-1.5">
@@ -164,7 +191,7 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
             })}
           </div>
 
-          {/* Motivation text + analytics link */}
+          {/* Motivation + analytics link */}
           <div className="mt-3 flex items-start justify-between gap-4">
             <p className="text-sm leading-snug text-white/55 line-clamp-2">
               {momentum.motivation}
@@ -175,14 +202,6 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
             >
               Stats <ArrowUpRight className="h-3 w-3" />
             </Link>
-          </div>
-        </div>
-
-        {/* ── Delta chip (hidden on sm+ since it's in stats row) ── */}
-        <div className="mt-3 flex sm:hidden">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/70">
-            <TrendingUp className="h-3.5 w-3.5 text-gold" />
-            <span>{deltaLabel} from last week</span>
           </div>
         </div>
       </div>

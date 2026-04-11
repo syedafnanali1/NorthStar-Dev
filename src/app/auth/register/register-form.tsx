@@ -6,11 +6,13 @@ import { signIn } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+import type { AuthConfigStatus } from "@/lib/env-checks";
 import { cn } from "@/lib/utils";
 import { registerSchema, type RegisterInput } from "@/lib/validators/auth";
 
 interface RegisterFormProps {
   inviteToken?: string;
+  initialProviderStatus: AuthConfigStatus;
 }
 
 const COUNTRY_OPTIONS = [
@@ -52,17 +54,16 @@ function suggestUsername(fullName: string): string {
   return base.slice(0, 30);
 }
 
-export function RegisterForm({ inviteToken }: RegisterFormProps) {
+export function RegisterForm({
+  inviteToken,
+  initialProviderStatus,
+}: RegisterFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [emailStatus, setEmailStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
-  const [providerStatus, setProviderStatus] = useState<{
-    googleConfigured: boolean;
-    facebookConfigured: boolean;
-    databaseConfigured: boolean;
-  } | null>(null);
+  const [providerStatus] = useState<AuthConfigStatus>(initialProviderStatus);
 
   const [dialCode, setDialCode] = useState("+1");
   const [phoneLocal, setPhoneLocal] = useState("");
@@ -88,17 +89,6 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
   const watchedEmail = watch("email");
   const watchedFullName = watch("fullName");
   const watchedUsername = watch("username");
-
-  useEffect(() => {
-    fetch("/api/auth/config-status")
-      .then((res) => res.json())
-      .then((json: { googleConfigured: boolean; facebookConfigured: boolean; databaseConfigured: boolean }) => {
-        setProviderStatus(json);
-      })
-      .catch(() => {
-        setProviderStatus(null);
-      });
-  }, []);
 
   useEffect(() => {
     const digits = phoneLocal.replace(/\D/g, "");
@@ -187,11 +177,15 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
 
   const handleOAuth = async (provider: "google" | "facebook") => {
     if (provider === "google" && providerStatus && !providerStatus.googleConfigured) {
-      setServerError("Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.local.");
+      setServerError(
+        "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.local or your deployment environment."
+      );
       return;
     }
     if (provider === "facebook" && providerStatus && !providerStatus.facebookConfigured) {
-      setServerError("Facebook OAuth is not configured. Set FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET in .env.local.");
+      setServerError(
+        "Facebook sign-in is temporarily unavailable."
+      );
       return;
     }
     setOauthLoading(provider);
@@ -269,11 +263,11 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
         Continue with Facebook
       </button>
 
-      {providerStatus && (!providerStatus.googleConfigured || !providerStatus.facebookConfigured) && (
+      {providerStatus && !providerStatus.facebookConfigured ? (
         <p className="text-xs text-amber-300/90">
-          OAuth disabled until provider keys are set in <code>.env.local</code>.
+          Facebook sign-in is temporarily unavailable.
         </p>
-      )}
+      ) : null}
 
       <div className="flex items-center gap-3">
         <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
@@ -289,6 +283,12 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
         {providerStatus && !providerStatus.databaseConfigured ? (
           <div className="px-3 py-2 rounded-lg bg-amber-200/10 text-amber-300 text-sm">
             Database is not configured. Email registration will not work until DATABASE_URL is set.
+          </div>
+        ) : null}
+
+        {providerStatus && !providerStatus.emailDeliveryConfigured ? (
+          <div className="px-3 py-2 rounded-lg bg-amber-200/10 text-amber-300 text-sm">
+            Email sign-up is temporarily unavailable while email delivery is being configured. Use Google sign-in for now.
           </div>
         ) : null}
 
@@ -387,7 +387,12 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
 
         <button
           type="submit"
-          disabled={loading || (providerStatus ? !providerStatus.databaseConfigured : false)}
+          disabled={
+            loading ||
+            (providerStatus
+              ? !providerStatus.databaseConfigured || !providerStatus.emailDeliveryConfigured
+              : false)
+          }
           className="w-full py-3 px-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-gold text-ink hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
         >
           {loading ? <div className="w-4 h-4 border-2 border-ink/20 border-t-ink rounded-full animate-spin" /> : null}

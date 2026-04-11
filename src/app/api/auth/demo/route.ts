@@ -1,8 +1,10 @@
 import bcrypt from "bcryptjs";
+import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/drizzle/schema";
+import { legacyUsersTable } from "@/lib/auth/adapter-schema";
 
 const DEMO_EMAIL = "demo@northstar.local";
 const DEMO_PASSWORD = "NorthStarDemo123";
@@ -20,7 +22,8 @@ export async function POST(): Promise<NextResponse> {
 
     if (!existingUser) {
       const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
-      await db.insert(users).values({
+      await db.insert(legacyUsersTable).values({
+        id: `usr_${nanoid(12)}`,
         name: "NorthStar Demo",
         email: DEMO_EMAIL,
         passwordHash,
@@ -31,12 +34,12 @@ export async function POST(): Promise<NextResponse> {
     } else if (!existingUser.passwordHash) {
       const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
       await db
-        .update(users)
+        .update(legacyUsersTable)
         .set({
           passwordHash,
           updatedAt: new Date(),
         })
-        .where(eq(users.id, existingUser.id));
+        .where(eq(legacyUsersTable.id, existingUser.id));
     }
 
     return NextResponse.json({

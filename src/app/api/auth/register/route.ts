@@ -1,11 +1,14 @@
 import bcrypt from "bcryptjs";
+import { nanoid } from "nanoid";
 import { eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { appUrl } from "@/lib/app-url";
 import { users, userAuthProfiles } from "@/drizzle/schema";
-import { isDatabaseConfigured } from "@/lib/env-checks";
+import { legacyUsersTable } from "@/lib/auth/adapter-schema";
+import { isDatabaseConfigured, isEmailDeliveryConfigured } from "@/lib/env-checks";
 import { authEmailService } from "@/lib/email/auth";
 import {
   appendPasswordHistory,
@@ -27,6 +30,11 @@ function jsonError(status: number, code: string, message: string, data?: Record<
     },
     { status }
   );
+}
+
+function isResendTestingModeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /only send testing emails to your own email address/i.test(message);
 }
 
 function slugifyUsername(value: string): string {
@@ -119,6 +127,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const normalizedEmail = normalizeEmail(email);
     const normalizedName = fullName.trim().replace(/\s+/g, " ");
 
+    if (
+      !isEmailDeliveryConfigured(process.env["RESEND_API_KEY"], process.env["EMAIL_FROM"])
+    ) {
+      return jsonError(
+        503,
+        "EMAIL_DELIVERY_UNAVAILABLE",
+        "Email sign-up is temporarily unavailable while email delivery is being configured. Use Google sign-in for now."
+      );
+    }
+
     const [existing] = await db
       .select({
         id: users.id,
@@ -142,7 +160,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (existing) {
       await db
-        .update(users)
+        .update(legacyUsersTable)
         .set({
           name: normalizedName,
           username: resolvedUsername,
@@ -151,13 +169,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           emailVerified: null,
           updatedAt: new Date(),
         })
-        .where(eq(users.id, existing.id));
+        .where(eq(legacyUsersTable.id, existing.id));
 
       userId = existing.id;
     } else {
+      userId = `usr_${nanoid(12)}`;
+
       const [created] = await db
-        .insert(users)
+        .insert(legacyUsersTable)
         .values({
+          id: userId,
           name: normalizedName,
           username: resolvedUsername,
           email: normalizedEmail,
@@ -165,7 +186,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           image: profilePhotoDataUrl ?? null,
           emailVerified: null,
         })
-        .returning({ id: users.id });
+        .returning({ id: legacyUsersTable.id });
 
       if (!created) {
         return jsonError(500, "REGISTER_FAILED", "Failed to create account");
@@ -225,7 +246,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const verifyUrl = `${process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000"}/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&code=${encodeURIComponent(otpResult.otp)}`;
+    const verifyUrl = appUrl(
+      `/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&code=${encodeURIComponent(otpResult.otp)}`
+    );
 
     try {
       await authEmailService.sendEmailVerificationOtp({
@@ -236,13 +259,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (emailError) {
       console.error("[POST /api/auth/register] verification_email_failed", emailError);
       return jsonError(
-        502,
-        "VERIFICATION_EMAIL_FAILED",
-        "We couldn't send a verification email. Please check the address and try again.",
-        {
-          canUpdateEmail: true,
-          resendAfterSeconds: AUTH_SECURITY_LIMITS.otpResendCooldownSeconds,
-        }
+        isResendTestingModeError(emailError) ? 503 : 502,
+        isResendTestingModeError(emailError)
+          ? "EMAIL_DELIVERY_UNAVAILABLE"
+          : "VERIFICATION_EMAIL_FAILED",
+        isResendTestingModeError(emailError)
+          ? "Email sign-up is temporarily unavailable while email delivery is being configured. Use Google sign-in for now."
+          : "We couldn't send a verification email. Please check the address and try again.",
+        isResendTestingModeError(emailError)
+          ? undefined
+          : {
+              canUpdateEmail: true,
+              resendAfterSeconds: AUTH_SECURITY_LIMITS.otpResendCooldownSeconds,
+            }
       );
     }
 

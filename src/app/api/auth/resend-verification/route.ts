@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { users } from "@/drizzle/schema";
+import { appUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
 import { authEmailService } from "@/lib/email/auth";
 import {
@@ -11,11 +12,17 @@ import {
   maskEmail,
   normalizeEmail,
 } from "@/lib/auth/security";
+import { isEmailDeliveryConfigured } from "@/lib/env-checks";
 
 const resendSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   mode: z.enum(["email", "signin"]).optional().default("email"),
 });
+
+function isResendTestingModeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /only send testing emails to your own email address/i.test(message);
+}
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
@@ -35,6 +42,21 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const email = normalizeEmail(validated.data.email);
     const purpose = validated.data.mode === "signin" ? "signin_step_up" : "email_verification";
+
+    if (
+      purpose === "email_verification" &&
+      !isEmailDeliveryConfigured(process.env["RESEND_API_KEY"], process.env["EMAIL_FROM"])
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "EMAIL_DELIVERY_UNAVAILABLE",
+          message:
+            "Email verification is temporarily unavailable while email delivery is being configured. Use Google sign-in for now.",
+        },
+        { status: 503 }
+      );
+    }
 
     const [user] = await db
       .select({ id: users.id, emailVerified: users.emailVerified })
@@ -82,7 +104,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     const modeQuery = validated.data.mode === "signin" ? "signin" : "email";
-    const verifyUrl = `${process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000"}/auth/verify-email?email=${encodeURIComponent(email)}&code=${encodeURIComponent(otpResult.otp ?? "")}&mode=${modeQuery}`;
+    const verifyUrl = appUrl(
+      `/auth/verify-email?email=${encodeURIComponent(email)}&code=${encodeURIComponent(otpResult.otp ?? "")}&mode=${modeQuery}`
+    );
 
     try {
       if (purpose === "signin_step_up") {
@@ -106,11 +130,14 @@ export async function POST(request: Request): Promise<NextResponse> {
       return NextResponse.json(
         {
           success: false,
-          code: "EMAIL_SEND_FAILED",
-          message:
-            "We couldn't send a verification email. Please check the address and try again.",
+          code: isResendTestingModeError(emailError)
+            ? "EMAIL_DELIVERY_UNAVAILABLE"
+            : "EMAIL_SEND_FAILED",
+          message: isResendTestingModeError(emailError)
+            ? "Email verification is temporarily unavailable while email delivery is being configured. Use Google sign-in for now."
+            : "We couldn't send a verification email. Please check the address and try again.",
         },
-        { status: 502 }
+        { status: isResendTestingModeError(emailError) ? 503 : 502 }
       );
     }
 

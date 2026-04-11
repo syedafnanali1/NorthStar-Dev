@@ -8,12 +8,17 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, EyeOff, Sparkles } from "lucide-react";
 
+import type { AuthConfigStatus } from "@/lib/env-checks";
 import { cn } from "@/lib/utils";
 import { loginSchema, type LoginInput } from "@/lib/validators/auth";
 
 interface LoginActionLink {
   href: string;
   label: string;
+}
+
+interface LoginFormProps {
+  initialProviderStatus: AuthConfigStatus;
 }
 
 interface LoginCheckResponse {
@@ -28,17 +33,14 @@ interface LoginCheckResponse {
   };
 }
 
-export function LoginForm() {
+export function LoginForm({ initialProviderStatus }: LoginFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
   const [demoLoading, setDemoLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverActionLink, setServerActionLink] = useState<LoginActionLink | null>(null);
-  const [providerStatus, setProviderStatus] = useState<{
-    googleConfigured: boolean;
-    facebookConfigured: boolean;
-  } | null>(null);
+  const [providerStatus] = useState<AuthConfigStatus>(initialProviderStatus);
 
   const searchParams = useSearchParams();
   const {
@@ -60,21 +62,14 @@ export function LoginForm() {
     const errorParam = searchParams?.get("error");
     if (errorParam) {
       setServerError(
-        errorParam === "CredentialsSignin"
+        errorParam === "Configuration"
+          ? "This sign-in option is temporarily unavailable."
+          : errorParam === "CredentialsSignin"
           ? "Sign in failed. Check your credentials and try again."
           : "Authentication failed. Please try again."
       );
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    fetch("/api/auth/config-status")
-      .then((response) => response.json())
-      .then((json: { googleConfigured: boolean; facebookConfigured: boolean }) => {
-        setProviderStatus(json);
-      })
-      .catch(() => setProviderStatus(null));
-  }, []);
 
   const onSubmit = async (data: LoginInput) => {
     setLoading(true);
@@ -146,13 +141,13 @@ export function LoginForm() {
   const handleOAuth = async (provider: "google" | "facebook") => {
     if (provider === "google" && providerStatus && !providerStatus.googleConfigured) {
       setServerError(
-        "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.local."
+        "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.local or your deployment environment."
       );
       return;
     }
     if (provider === "facebook" && providerStatus && !providerStatus.facebookConfigured) {
       setServerError(
-        "Facebook OAuth is not configured. Set FACEBOOK_CLIENT_ID and FACEBOOK_CLIENT_SECRET in .env.local."
+        "Facebook sign-in is temporarily unavailable."
       );
       return;
     }
@@ -242,9 +237,9 @@ export function LoginForm() {
         Continue with Facebook
       </button>
 
-      {providerStatus && (!providerStatus.googleConfigured || !providerStatus.facebookConfigured) ? (
+      {providerStatus && !providerStatus.facebookConfigured ? (
         <p className="text-xs text-amber-300/90">
-          OAuth is disabled until provider keys are added to <code>.env.local</code>.
+          Facebook sign-in is temporarily unavailable.
         </p>
       ) : null}
 

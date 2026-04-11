@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { passwordResetTokens, users } from "@/drizzle/schema";
+import { appUrl } from "@/lib/app-url";
 import { db } from "@/lib/db";
 import { emailService } from "@/lib/email";
 import {
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       expires: addMinutes(new Date(), AUTH_SECURITY_LIMITS.resetLinkExpiresMinutes),
     });
 
-    const resetUrl = `${process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000"}/auth/reset-password?token=${signedToken}`;
+    const resetUrl = appUrl(`/auth/reset-password?token=${signedToken}`);
     await emailService.sendPasswordReset({ to: user.email, resetUrl });
 
     return NextResponse.json({
