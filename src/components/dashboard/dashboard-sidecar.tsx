@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -35,7 +35,6 @@ interface DashboardSidecarProps {
   }>;
   variant?: "page" | "desktop";
   smartSuggestions?: string[];
-  showIntentions?: boolean;
   patternInsights?: Pick<
     BehaviorIntelligenceData,
     | "consistencyScore"
@@ -52,7 +51,6 @@ export function DashboardSidecar({
   completedTaskIds,
   circleFeed,
   smartSuggestions = [],
-  showIntentions = true,
   patternInsights = null,
   variant = "page",
 }: DashboardSidecarProps) {
@@ -66,8 +64,16 @@ export function DashboardSidecar({
   const activeDays = selectedPoints.filter((point) => point.intensity > 0).length;
   const perfectDays = selectedPoints.filter((point) => point.intensity >= 1).length;
   const completedSet = todayTasksCtx.completedIds ?? new Set(completedTaskIds);
+  const completionPercent =
+    tasks.length > 0 ? Math.round((completedSet.size / tasks.length) * 100) : 0;
+  const mergedSuggestions = Array.from(
+    new Set([...(patternInsights?.recommendations ?? []), ...smartSuggestions])
+  )
+    .map((tip) => tip.trim())
+    .filter((tip) => tip.length > 0)
+    .slice(0, 3);
 
-  /* ── Desktop right-panel variant ─────────────────────── */
+  /* â”€â”€ Desktop right-panel variant â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   if (variant === "desktop") {
     return (
       <aside className="min-w-0 space-y-4">
@@ -101,127 +107,87 @@ export function DashboardSidecar({
               </div>
             </div>
             <p className="mt-3 text-[0.6875rem] text-[#C9B68D]/70">
-              {activeDays} active · {perfectDays} perfect · last {selectedRange.key.toLowerCase()}
+              {activeDays} active Â· {perfectDays} perfect Â· last {selectedRange.key.toLowerCase()}
             </p>
           </div>
         </section>
 
-        {showIntentions ? (
-          <section className="card p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="section-label">Today&apos;s Intentions</p>
-            <span className="font-mono text-[0.6875rem] text-ink-muted">
-              {completedSet.size}/{tasks.length}
-            </span>
-          </div>
-
-          <div className="space-y-0.5 overflow-hidden">
-            {tasks.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-cream-dark px-3 py-4 text-sm italic text-ink-muted">
-                No intentions set yet.
+        <section>
+          <div className="overflow-hidden rounded-[1rem] border border-[#2A2522] bg-[#171411] p-3.5 text-white shadow-[0_18px_46px_rgba(26,23,20,0.18)]">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="section-label" style={{ color: "rgba(199,175,122,0.72)" }}>
+                Patterns &amp; Suggestions
               </p>
-            ) : (() => {
-              const incomplete = tasks.filter((t) => !completedSet.has(t.id));
-              if (incomplete.length === 0) {
-                return (
-                  <div className="flex items-center gap-2 rounded-xl border border-cream-dark bg-cream/50 px-3 py-3">
-                    <span className="text-base">🎉</span>
-                    <span className="text-sm text-ink-muted">All done today!</span>
-                  </div>
-                );
-              }
-              return incomplete.map((task) => (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[0.625rem] text-[#D7C299]">
+                {tasks.length > 0 ? `${completedSet.size}/${tasks.length}` : "No plan"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                {
+                  label: "Consistency",
+                  value: patternInsights ? `${patternInsights.consistencyScore}%` : `${completionPercent}%`,
+                },
+                {
+                  label: "Follow-through",
+                  value: patternInsights ? `${patternInsights.followThroughScore}%` : `${completionPercent}%`,
+                },
+                {
+                  label: "Daily load",
+                  value: patternInsights ? `${patternInsights.adaptiveDailyTarget}` : `${tasks.length}`,
+                },
+                {
+                  label: "Done today",
+                  value: tasks.length > 0 ? `${completionPercent}%` : "—",
+                },
+              ].map((item) => (
                 <div
-                  key={task.id}
-                  className="flex min-h-[36px] items-center gap-2.5 border-b border-cream-dark px-1 py-1.5 text-ink last:border-b-0"
-                  style={{ animation: "fadeIn 0.25s ease" }}
+                  key={item.label}
+                  className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2"
                 >
-                  <span className="flex h-3.5 w-3.5 flex-shrink-0 rounded-sm border border-ink-muted/50 bg-cream-paper" />
-                  <span className="text-sm leading-snug">{task.text}</span>
+                  <p className="text-[0.5625rem] font-semibold uppercase tracking-[0.08em] text-white/50">
+                    {item.label}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[#F3E7CF]">{item.value}</p>
                 </div>
-              ));
-            })()}
+              ))}
+            </div>
+
+            <p className="mt-3 text-[0.6875rem] text-[#C9B68D]/80">
+              Best check-in window:{" "}
+              <span className="font-semibold text-[#F3E7CF]">
+                {patternInsights?.bestCheckInWindow ?? "Build 3+ logs to unlock"}
+              </span>
+            </p>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-[#100d0a] px-2.5 py-2.5">
+              <ol className="space-y-2">
+                {mergedSuggestions.length > 0 ? (
+                  mergedSuggestions.map((tip, index) => (
+                    <li key={tip} className="flex gap-2 text-[0.75rem] leading-snug text-[#E7DCC7]">
+                      <span className="mt-[1px] font-mono text-[0.625rem] text-[#C9B68D]">
+                        {index + 1}.
+                      </span>
+                      <span>{tip}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-[0.75rem] leading-snug text-[#B39E7A]">
+                    Keep checking in daily to unlock tailored momentum suggestions.
+                  </li>
+                )}
+              </ol>
+            </div>
+
+            <Link
+              href="/calendar"
+              className="mt-3 inline-flex text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-[#D7C299] transition-colors hover:text-[#F3E7CF]"
+            >
+              Open Daily Log
+            </Link>
           </div>
-
-          {patternInsights ? (
-            <details className="mt-3 rounded-xl border border-cream-dark bg-cream-paper px-3 py-2">
-              <summary className="cursor-pointer text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-ink-muted">
-                Your patterns
-              </summary>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {[
-                  { label: "Consistency", value: `${patternInsights.consistencyScore}%` },
-                  { label: "Follow-through", value: `${patternInsights.followThroughScore}%` },
-                  { label: "Daily load", value: `${patternInsights.adaptiveDailyTarget}` },
-                ].map((item) => (
-                  <div key={item.label} className="rounded-lg border border-cream-dark bg-cream px-2 py-1.5">
-                    <p className="text-[0.5625rem] font-semibold uppercase tracking-[0.08em] text-ink-muted">
-                      {item.label}
-                    </p>
-                    <p className="mt-0.5 text-xs font-semibold text-ink">{item.value}</p>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-2 text-[0.6875rem] text-ink-muted">
-                Best check-in window: <span className="text-ink">{patternInsights.bestCheckInWindow}</span>
-              </p>
-              <ol className="mt-2 space-y-1.5">
-                {patternInsights.recommendations.slice(0, 2).map((tip, index) => (
-                  <li key={tip} className="text-[0.75rem] leading-snug text-ink-soft">
-                    <span className="mr-1.5 font-mono text-[0.625rem] text-ink-muted">
-                      {index + 1}.
-                    </span>
-                    {tip}
-                  </li>
-                ))}
-              </ol>
-            </details>
-          ) : null}
-
-          {smartSuggestions.length > 0 ? (
-            <details className="mt-3 rounded-xl border border-cream-dark bg-cream-paper px-3 py-2">
-              <summary className="cursor-pointer text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-ink-muted">
-                Smart suggestions
-              </summary>
-              <ol className="mt-2 space-y-1.5">
-                {smartSuggestions.slice(0, 2).map((tip, index) => (
-                  <li key={tip} className="text-[0.75rem] leading-snug text-ink-soft">
-                    <span className="mr-1.5 font-mono text-[0.625rem] text-ink-muted">
-                      {index + 1}.
-                    </span>
-                    {tip}
-                  </li>
-                ))}
-              </ol>
-              <Link
-                href="/calendar"
-                className="mt-2 inline-flex text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-ink-muted transition-colors hover:text-ink"
-              >
-                Open Daily Log
-              </Link>
-            </details>
-          ) : null}
         </section>
-        ) : smartSuggestions.length > 0 ? (
-          <section className="card p-4">
-            <details className="rounded-xl border border-cream-dark bg-cream-paper px-3 py-2">
-              <summary className="cursor-pointer text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-ink-muted">
-                Smart suggestions
-              </summary>
-              <ol className="mt-2 space-y-1.5">
-                {smartSuggestions.slice(0, 2).map((tip, index) => (
-                  <li key={tip} className="text-[0.75rem] leading-snug text-ink-soft">
-                    <span className="mr-1.5 font-mono text-[0.625rem] text-ink-muted">
-                      {index + 1}.
-                    </span>
-                    {tip}
-                  </li>
-                ))}
-              </ol>
-            </details>
-          </section>
-        ) : null}
-
         {/* Circle Check-ins */}
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -245,10 +211,10 @@ export function DashboardSidecar({
             ) : (
               circleFeed.map((post) => {
                 const reactions = [
-                  { emoji: "🔥", count: post.reactionCounts["🔥"] ?? 0 },
-                  { emoji: "💪", count: post.reactionCounts["💪"] ?? 0 },
-                  { emoji: "💙", count: post.reactionCounts["💙"] ?? 0 },
-                  { emoji: "✨", count: post.reactionCounts["✨"] ?? 0 },
+                  { emoji: "ðŸ”¥", count: post.reactionCounts["ðŸ”¥"] ?? 0 },
+                  { emoji: "ðŸ’ª", count: post.reactionCounts["ðŸ’ª"] ?? 0 },
+                  { emoji: "ðŸ’™", count: post.reactionCounts["ðŸ’™"] ?? 0 },
+                  { emoji: "âœ¨", count: post.reactionCounts["âœ¨"] ?? 0 },
                 ];
 
                 return (
@@ -305,7 +271,7 @@ export function DashboardSidecar({
     );
   }
 
-  /* ── On-page variant (mobile / full-page sidecar) ─────── */
+  /* â”€â”€ On-page variant (mobile / full-page sidecar) â”€â”€â”€â”€â”€â”€â”€ */
   return (
     <aside className={cn("min-w-0 space-y-5", "xl:sticky xl:top-24")}>
       {/* Constellation */}
@@ -338,57 +304,83 @@ export function DashboardSidecar({
         </div>
 
         <p className="mt-3 text-sm text-ink-muted">
-          {activeDays} active · {perfectDays} perfect in the last {selectedRange.key.toLowerCase()}
+          {activeDays} active Â· {perfectDays} perfect in the last {selectedRange.key.toLowerCase()}
         </p>
       </section>
 
-      {/* Today's Intentions */}
+      {/* Patterns + suggestions */}
       <section className="panel-shell p-5 sm:p-6">
         <div className="mb-3.5 flex items-center justify-between gap-3">
-          <h2 className="text-xl font-serif font-semibold text-ink">Today&apos;s Intentions</h2>
+          <h2 className="text-xl font-serif font-semibold text-ink">Patterns &amp; Suggestions</h2>
           <span className="rounded-full border border-cream-dark bg-cream-paper px-2.5 py-1 text-xs font-mono text-ink-muted">
-            {completedSet.size}/{tasks.length}
+            {tasks.length > 0 ? `${completedSet.size}/${tasks.length}` : "No plan"}
           </span>
         </div>
 
-        <div className="space-y-2.5">
-          {tasks.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-cream-dark px-4 py-5 text-sm italic text-ink-muted">
-              No intentions yet. Plant a new goal and its daily tasks will land here.
-            </p>
-          ) : (
-            tasks.map((task) => {
-              const isComplete = completedSet.has(task.id);
-              return (
-                <div
-                  key={task.id}
-                  className={cn(
-                    "flex min-h-[52px] items-center gap-3 rounded-2xl border px-4 py-3 transition-all",
-                    isComplete
-                      ? "border-ink bg-ink text-cream-paper"
-                      : "border-cream-dark bg-cream-paper/80 text-ink"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border text-[11px] font-bold",
-                      isComplete
-                        ? "border-gold bg-gold text-ink"
-                        : "border-ink-muted/60 bg-cream-paper text-transparent"
-                    )}
-                  >
-                    ✓
-                  </span>
-                  <span className={cn("text-sm leading-snug", isComplete && "line-through opacity-60")}>
-                    {task.text}
-                  </span>
-                </div>
-              );
-            })
-          )}
+        <div className="grid grid-cols-2 gap-2.5">
+          {[
+            {
+              label: "Consistency",
+              value: patternInsights ? `${patternInsights.consistencyScore}%` : `${completionPercent}%`,
+            },
+            {
+              label: "Follow-through",
+              value: patternInsights ? `${patternInsights.followThroughScore}%` : `${completionPercent}%`,
+            },
+            {
+              label: "Daily load",
+              value: patternInsights ? `${patternInsights.adaptiveDailyTarget}` : `${tasks.length}`,
+            },
+            {
+              label: "Done today",
+              value: tasks.length > 0 ? `${completionPercent}%` : "—",
+            },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-xl border border-cream-dark bg-cream-paper/80 px-3 py-2.5"
+            >
+              <p className="text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                {item.label}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-ink">{item.value}</p>
+            </div>
+          ))}
         </div>
-      </section>
 
+        <p className="mt-3 text-[0.8125rem] text-ink-muted">
+          Best check-in window:{" "}
+          <span className="font-semibold text-ink">
+            {patternInsights?.bestCheckInWindow ?? "Build 3+ logs to unlock"}
+          </span>
+        </p>
+
+        <div className="mt-3 rounded-2xl border border-cream-dark bg-cream-paper/80 px-4 py-3">
+          <ol className="space-y-2">
+            {mergedSuggestions.length > 0 ? (
+              mergedSuggestions.map((tip, index) => (
+                <li key={tip} className="flex gap-2 text-sm leading-snug text-ink-soft">
+                  <span className="mt-[1px] font-mono text-[0.6875rem] text-ink-muted">
+                    {index + 1}.
+                  </span>
+                  <span>{tip}</span>
+                </li>
+              ))
+            ) : (
+              <li className="text-sm italic text-ink-muted">
+                Keep checking in daily to unlock tailored momentum suggestions.
+              </li>
+            )}
+          </ol>
+        </div>
+
+        <Link
+          href="/calendar"
+          className="mt-3 inline-flex text-xs font-bold uppercase tracking-[0.2em] text-gold transition-colors hover:text-ink"
+        >
+          Open Daily Log
+        </Link>
+      </section>
       {/* Circle Check-ins */}
       <section className="panel-shell p-5 sm:p-6">
         <div className="mb-3.5 flex items-center justify-between gap-3">
@@ -412,10 +404,10 @@ export function DashboardSidecar({
           ) : (
             circleFeed.map((post) => {
               const reactions = [
-                { emoji: "🔥", count: post.reactionCounts["🔥"] ?? 0 },
-                { emoji: "💪", count: post.reactionCounts["💪"] ?? 0 },
-                { emoji: "💙", count: post.reactionCounts["💙"] ?? 0 },
-                { emoji: "✨", count: post.reactionCounts["✨"] ?? 0 },
+                { emoji: "ðŸ”¥", count: post.reactionCounts["ðŸ”¥"] ?? 0 },
+                { emoji: "ðŸ’ª", count: post.reactionCounts["ðŸ’ª"] ?? 0 },
+                { emoji: "ðŸ’™", count: post.reactionCounts["ðŸ’™"] ?? 0 },
+                { emoji: "âœ¨", count: post.reactionCounts["âœ¨"] ?? 0 },
               ];
 
               return (
@@ -438,7 +430,7 @@ export function DashboardSidecar({
                           {post.author?.name ?? "Circle member"}
                         </span>
                         {(post.author?.streak ?? 0) > 0 ? (
-                          <span className="text-xs text-ink-muted">🔥 {post.author?.streak}</span>
+                          <span className="text-xs text-ink-muted">ðŸ”¥ {post.author?.streak}</span>
                         ) : null}
                         <span className="text-xs text-ink-muted">{relativeTime(post.createdAt)}</span>
                       </div>
@@ -476,3 +468,5 @@ export function DashboardSidecar({
     </aside>
   );
 }
+
+

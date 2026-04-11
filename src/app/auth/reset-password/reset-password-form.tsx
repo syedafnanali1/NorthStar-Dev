@@ -17,8 +17,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
       setError("Passwords do not match");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+
+    if (password.length < 12) {
+      setError("Password must be at least 12 characters");
       return;
     }
 
@@ -31,10 +32,10 @@ export function ResetPasswordForm({ token }: { token: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password, confirmPassword: confirm }),
       });
-      const json = (await response.json()) as { error?: string };
+      const json = (await response.json()) as { message?: string };
 
       if (!response.ok) {
-        setError(json.error ?? "Reset failed");
+        setError(json.message ?? "Reset failed");
         return;
       }
 
@@ -61,7 +62,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <div className="rounded-3xl border border-[#2A2522] bg-[#1C1917] p-8">
           <h2 className="mb-1 text-xl font-serif text-white">Choose a new password</h2>
           <p className="mb-7 text-sm text-white/30">
-            At least 8 characters, 1 uppercase, 1 number.
+            At least 12 characters with uppercase, lowercase, number, and symbol.
           </p>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error ? (
@@ -93,7 +94,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
               {loading ? (
                 <div className="h-4 w-4 rounded-full border-2 border-ink/20 border-t-ink animate-spin" />
               ) : null}
-              Reset Password →
+              Reset Password
             </button>
           </form>
         </div>

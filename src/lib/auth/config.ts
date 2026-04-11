@@ -1,26 +1,31 @@
-// src/lib/auth/config.ts
-// NextAuth v5 configuration
-// Google OAuth, Facebook OAuth, email/password credentials
-
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
-import Facebook from "next-auth/providers/facebook";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
+import Facebook from "next-auth/providers/facebook";
+import Google from "next-auth/providers/google";
+import { and, eq, gt, sql } from "drizzle-orm";
+
+import { accounts, sessions, users, verificationTokens } from "@/drizzle/schema";
+import {
+  clearFailedLogins,
+  isUserLocked,
+  normalizeEmail,
+  recordFailedLogin,
+} from "@/lib/auth/security-core";
+import { createOtpChallenge } from "@/lib/auth/security";
 import { db } from "@/lib/db";
-import { users, accounts, sessions, verificationTokens } from "@/drizzle/schema";
-import { eq, sql } from "drizzle-orm";
-import { loginSchema } from "@/lib/validators/auth";
+import { authEmailService } from "@/lib/email/auth";
 import {
   isFacebookOAuthConfigured,
   isGoogleOAuthConfigured,
 } from "@/lib/env-checks";
+import { loginSchema } from "@/lib/validators/auth";
 
 const googleConfigured = isGoogleOAuthConfigured(
   process.env["GOOGLE_CLIENT_ID"],
   process.env["GOOGLE_CLIENT_SECRET"]
 );
+
 const facebookConfigured = isFacebookOAuthConfigured(
   process.env["FACEBOOK_CLIENT_ID"],
   process.env["FACEBOOK_CLIENT_SECRET"]
@@ -45,26 +50,49 @@ const providers = [
       const validated = loginSchema.safeParse(credentials);
       if (!validated.success) return null;
 
-      const { email, password } = validated.data;
-      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedEmail = normalizeEmail(validated.data.email);
+      const password = validated.data.password;
 
       const [user] = await db
-        .select()
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          image: users.image,
+          passwordHash: users.passwordHash,
+          emailVerified: users.emailVerified,
+        })
         .from(users)
         .where(sql`lower(${users.email}) = ${normalizedEmail}`)
         .limit(1);
 
       if (!user || !user.passwordHash) return null;
 
-      const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-      if (!passwordMatch) return null;
+      const lockState = await isUserLocked(user.id);
+      if (lockState.locked) {
+        return null;
+      }
+
+      const { compare } = await import("bcryptjs");
+      const passwordMatch = await compare(password, user.passwordHash);
+
+      if (!passwordMatch) {
+        await recordFailedLogin(user.id);
+        return null;
+      }
+
+      if (!user.emailVerified) {
+        return null;
+      }
+
+      await clearFailedLogins(user.id);
 
       return {
         id: user.id,
         email: user.email,
         name: user.name,
         image: user.image,
-      };
+      } as const;
     },
   }),
 ];
@@ -102,7 +130,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 24 * 60 * 60,
   },
 
   pages: {
@@ -114,12 +142,99 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
 
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider !== "google" && account?.provider !== "facebook") {
+        return true;
+      }
+
+      if (!user.id || !user.email) {
+        return false;
+      }
+
+      const now = new Date();
+
+      const [profile] = await db
+        .select({ lastActiveAt: users.lastActiveAt })
+        .from(users)
+        .where(eq(users.id, user.id))
+        .limit(1);
+
+      const [stepUpMarker] = await db
+        .select({ token: verificationTokens.token })
+        .from(verificationTokens)
+        .where(
+          and(
+            eq(verificationTokens.identifier, `stepup_passed:${user.id}`),
+            gt(verificationTokens.expires, now)
+          )
+        )
+        .limit(1);
+
+      const markerMs = Number(stepUpMarker?.token ?? 0);
+      const lastVerifiedAt =
+        Number.isFinite(markerMs) && markerMs > 0 ? new Date(markerMs) : null;
+      const verifiedToday =
+        !!lastVerifiedAt && lastVerifiedAt.toDateString() === now.toDateString();
+
+      const firstLoginToday =
+        !profile?.lastActiveAt ||
+        profile.lastActiveAt.toDateString() !== now.toDateString();
+
+      const daysSinceStepUp = lastVerifiedAt
+        ? (now.getTime() - lastVerifiedAt.getTime()) / (1000 * 60 * 60 * 24)
+        : Number.POSITIVE_INFINITY;
+
+      const requiresStepUp =
+        (!verifiedToday && firstLoginToday) || daysSinceStepUp > 7;
+
+      if (!requiresStepUp) {
+        return true;
+      }
+
+      const provider = account.provider === "google" || account.provider === "facebook"
+        ? account.provider
+        : "google";
+
+      const verifyPath = `/auth/verify-email?mode=signin&provider=${encodeURIComponent(provider)}&email=${encodeURIComponent(user.email)}`;
+      const appUrl = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
+
+      try {
+        const otpChallenge = await createOtpChallenge({
+          userId: user.id,
+          email: user.email,
+          purpose: "signin_step_up",
+          context: {
+            provider,
+            firstLoginToday,
+            verifiedToday,
+            daysSinceStepUp,
+          },
+          force: true,
+        });
+
+        if (otpChallenge.status === "created" && otpChallenge.otp) {
+          const verifyUrl = `${appUrl}${verifyPath}&code=${encodeURIComponent(otpChallenge.otp)}`;
+          await authEmailService.sendSignInStepUpOtp({
+            to: user.email,
+            otp: otpChallenge.otp,
+            verifyUrl,
+            device: `${provider} OAuth`,
+            location: "Unknown location",
+            timestamp: now.toISOString(),
+          });
+        }
+      } catch (error) {
+        console.error("[auth] oauth step-up otp send failed", error);
+      }
+
+      return verifyPath;
+    },
+
     async jwt({ token, user, trigger, session }) {
       if (user) {
         token["userId"] = user.id;
       }
 
-      // Handle session updates (e.g., profile changes)
       if (trigger === "update" && session) {
         token["name"] = session.name as string;
         token["image"] = session.image as string;
@@ -129,8 +244,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
 
     async session({ session, token }) {
-      if (token["userId"]) {
-        session.user.id = token["userId"] as string;
+      const userId = token["userId"] as string | undefined;
+      if (userId) {
+        session.user.id = userId;
       }
       return session;
     },
@@ -138,13 +254,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
   events: {
     async signIn({ user }) {
-      // Update lastActiveAt on sign in
-      if (user.id) {
-        await db
+      if (!user.id) return;
+
+      await Promise.all([
+        db
           .update(users)
           .set({ lastActiveAt: new Date() })
-          .where(eq(users.id, user.id));
-      }
+          .where(eq(users.id, user.id)),
+        clearFailedLogins(user.id),
+      ]);
     },
   },
 

@@ -10,7 +10,10 @@ const DEMO_PASSWORD = "NorthStarDemo123";
 export async function POST(): Promise<NextResponse> {
   try {
     const [existingUser] = await db
-      .select()
+      .select({
+        id: users.id,
+        passwordHash: users.passwordHash,
+      })
       .from(users)
       .where(sql`lower(${users.email}) = ${DEMO_EMAIL}`)
       .limit(1);

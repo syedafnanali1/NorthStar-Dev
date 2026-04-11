@@ -220,7 +220,6 @@ export async function RightPanel({ userId, variant = "default" }: RightPanelProp
       <div className="px-5 py-6">
         <DashboardSidecar
           variant="desktop"
-          showIntentions={variant !== "calendar"}
           completedTaskIds={todayLog?.completedTaskIds ?? []}
           constellationData={constellationData}
           patternInsights={patternInsights}

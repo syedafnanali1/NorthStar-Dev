@@ -4,8 +4,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { users, goals } from "@/drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { users, goals, userAchievements } from "@/drizzle/schema";
+import { eq, and, sql } from "drizzle-orm";
 import { AppLayout } from "@/components/layout/app-layout";
 import { LevelBadge } from "@/components/ui/level-badge";
 import { format } from "date-fns";
@@ -29,6 +29,13 @@ const ACHIEVEMENT_DEFS = [
   { key: "level_5", label: "Level 5", emoji: "🚀", description: "Reached level 5" },
   { key: "level_10", label: "Level 10", emoji: "✨", description: "Reached level 10" },
 ];
+
+const GROUP_BADGE_DEFS: Record<string, { label: string; emoji: string; description: string }> = {
+  group_first_goal:    { label: "First Goal Completed", emoji: "🎯", description: "Completed a group goal check-in" },
+  group_10_checkins:   { label: "10 Check-ins",         emoji: "✅", description: "Logged 10 group check-ins" },
+  group_connector:     { label: "Group Connector",       emoji: "🤝", description: "Invited 3+ members to groups" },
+  group_streak_keeper: { label: "Streak Keeper",         emoji: "🔥", description: "7 consecutive daily check-ins" },
+};
 
 function getEarnedAchievements(
   longestStreak: number,
@@ -96,6 +103,20 @@ export default async function PublicProfilePage({ params }: Props) {
     user.totalGoalsCompleted,
     user.level
   );
+
+  // Group badges from DB
+  const groupBadgeRows = await db
+    .select({ key: userAchievements.achievementKey, earnedAt: userAchievements.earnedAt })
+    .from(userAchievements)
+    .where(
+      and(
+        eq(userAchievements.userId, user.id),
+        sql`${userAchievements.achievementKey} LIKE 'group_%'`
+      )
+    );
+  const earnedGroupBadges = groupBadgeRows
+    .map((r) => ({ ...GROUP_BADGE_DEFS[r.key], key: r.key, earnedAt: r.earnedAt }))
+    .filter((b) => b.label !== undefined) as { key: string; label: string; emoji: string; description: string; earnedAt: Date }[];
 
   const initials = (user.name ?? user.username ?? "?")
     .split(" ")
@@ -253,6 +274,30 @@ export default async function PublicProfilePage({ params }: Props) {
             })}
           </div>
         </section>
+
+        {/* Group Badges */}
+        {earnedGroupBadges.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-muted">
+              Group Badges
+            </h2>
+            <div className="flex flex-wrap gap-3">
+              {earnedGroupBadges.map((badge) => (
+                <div
+                  key={badge.key}
+                  title={badge.description}
+                  className="panel-shell flex items-center gap-3 px-4 py-3"
+                >
+                  <span className="text-2xl">{badge.emoji}</span>
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{badge.label}</p>
+                    <p className="text-[10px] text-ink-muted">{badge.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </AppLayout>
   );

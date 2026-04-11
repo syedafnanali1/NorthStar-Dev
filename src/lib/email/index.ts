@@ -123,7 +123,7 @@ export const emailService = {
         Reset Password →
       </a>
       <p style="font-size:12px;color:#8C857D;margin:24px 0 0;">
-        This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
+        This link expires in 20 minutes. If you didn't request this, you can safely ignore this email.
       </p>
     `;
 

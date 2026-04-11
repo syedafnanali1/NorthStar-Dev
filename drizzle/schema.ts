@@ -144,6 +144,11 @@ export const visionBoardItemTypeEnum = pgEnum("vision_board_item_type", [
 
 export const groupTypeEnum = pgEnum("group_type", ["public", "private"]);
 
+export const groupCategoryEnum = pgEnum("group_category", [
+  "health", "fitness", "finance", "mindset", "writing",
+  "reading", "career", "lifestyle", "creativity", "community", "other",
+]);
+
 export const groupMemberRoleEnum = pgEnum("group_member_role", [
   "owner",
   "admin",
@@ -179,6 +184,8 @@ export const groupEngagementActionEnum = pgEnum("group_engagement_action", [
   "invite_member",
   "join_group",
   "add_to_calendar",
+  "session_visit",
+  "circle_request",
 ]);
 
 // ─── USERS ────────────────────────────────────────────────────────────────────
@@ -193,6 +200,12 @@ export const users = pgTable("users", {
   emailVerified: timestamp("email_verified", { mode: "date" }),
   passwordHash: text("password_hash"),
   image: text("image"),
+  phoneNumber: text("phone_number"),
+  dateOfBirth: timestamp("date_of_birth", { mode: "date" }),
+  countryRegion: text("country_region"),
+  alwaysVerifySignIn: boolean("always_verify_sign_in").default(false).notNull(),
+  lastStepUpVerifiedAt: timestamp("last_step_up_verified_at", { mode: "date" }),
+  sessionVersion: integer("session_version").default(1).notNull(),
   // Profile
   age: integer("age"),
   location: text("location"),
@@ -294,6 +307,116 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   expires: timestamp("expires", { mode: "date" }).notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
 });
+
+// Authentication profile fields collected at registration
+export const userAuthProfiles = pgTable("user_auth_profiles", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  phoneNumber: text("phone_number").notNull(),
+  dateOfBirth: timestamp("date_of_birth", { mode: "date" }).notNull(),
+  countryRegion: text("country_region").notNull(),
+  referralCode: text("referral_code"),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+// Login lockouts and failed-attempt counters
+export const authLoginSecurity = pgTable("auth_login_security", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  failedAttempts: integer("failed_attempts").default(0).notNull(),
+  lockUntil: timestamp("lock_until", { mode: "date" }),
+  lastFailedAt: timestamp("last_failed_at", { mode: "date" }),
+  lastSuccessfulAt: timestamp("last_successful_at", { mode: "date" }),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+// One-time passcodes for email verification and step-up verification
+export const authEmailOtps = pgTable(
+  "auth_email_otps",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `aotp_${nanoid(24)}`),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    purpose: text("purpose").notNull(),
+    otpHash: text("otp_hash").notNull(),
+    context: jsonb("context")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    usedAt: timestamp("used_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    emailPurposeIdx: index("auth_email_otps_email_purpose_idx").on(
+      table.email,
+      table.purpose,
+      table.createdAt
+    ),
+    userPurposeIdx: index("auth_email_otps_user_purpose_idx").on(
+      table.userId,
+      table.purpose,
+      table.createdAt
+    ),
+  })
+);
+
+// Trusted device fingerprints (hashed only)
+export const userTrustedDevices = pgTable(
+  "user_trusted_devices",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `utd_${nanoid(24)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    fingerprintHash: text("fingerprint_hash").notNull(),
+    deviceLabel: text("device_label"),
+    ipAddress: text("ip_address"),
+    country: text("country"),
+    city: text("city"),
+    trustedUntil: timestamp("trusted_until", { mode: "date" }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { mode: "date" }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userFingerprintUnique: uniqueIndex("user_trusted_devices_user_fp_uidx").on(
+      table.userId,
+      table.fingerprintHash
+    ),
+    userLastSeenIdx: index("user_trusted_devices_user_last_seen_idx").on(
+      table.userId,
+      table.lastSeenAt
+    ),
+  })
+);
+
+// Password history used to block reuse of the last 5 passwords
+export const userPasswordHistory = pgTable(
+  "user_password_history",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `uph_${nanoid(24)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    passwordHash: text("password_hash").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userCreatedIdx: index("user_password_history_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+  })
+);
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
 
@@ -838,14 +961,18 @@ export const groups = pgTable(
     engagementScore: integer("engagement_score").default(0).notNull(),
     // Rank among all groups; null until first ranking run
     popularityRank: integer("popularity_rank"),
+    // Weighted popularity score 0-100: memberCount(30%) + comments30d(20%) + goalCompletionRate(30%) + recommendationRating(20%)
+    popularityScore: real("popularity_score").default(0).notNull(),
+    category: groupCategoryEnum("category"),
     isArchived: boolean("is_archived").default(false).notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => ({
-    typeIdx:    index("groups_type_idx").on(table.type),
-    creatorIdx: index("groups_creator_idx").on(table.createdBy),
-    rankIdx:    index("groups_rank_idx").on(table.popularityRank),
+    typeIdx:     index("groups_type_idx").on(table.type),
+    creatorIdx:  index("groups_creator_idx").on(table.createdBy),
+    rankIdx:     index("groups_rank_idx").on(table.popularityRank),
+    categoryIdx: index("groups_category_idx").on(table.category),
   })
 );
 
@@ -874,6 +1001,10 @@ export const groupMembers = pgTable(
     goalsCompleted: integer("goals_completed").default(0).notNull(),
     commentsPosted: integer("comments_posted").default(0).notNull(),
     reactionsGiven: integer("reactions_given").default(0).notNull(),
+    invitesSent: integer("invites_sent").default(0).notNull(),
+    sessionVisits: integer("session_visits").default(0).notNull(),
+    // Self-reported success / recommendation rating 1–10; contributes 20% of group popularity score
+    recommendationRating: integer("recommendation_rating"),
   },
   (table) => ({
     uniqueMember: uniqueIndex("group_members_unique_idx").on(table.groupId, table.userId),
@@ -982,6 +1113,70 @@ export const groupGoalItems = pgTable(
   })
 );
 
+// ─── GROUP GOAL MEMBER TRACKERS ──────────────────────────────────────────────
+// One row per (user × group_goal_item) once a member clicks "Add to My Calendar".
+// Tracks their personal check-in progress that feeds back into group aggregates.
+
+export const groupGoalMemberTrackers = pgTable(
+  "group_goal_member_trackers",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ggmt_${nanoid(12)}`),
+    groupGoalItemId: text("group_goal_item_id")
+      .notNull()
+      .references(() => groupGoalItems.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    checkInsCompleted: integer("check_ins_completed").default(0).notNull(),
+    lastCheckedInAt: timestamp("last_checked_in_at", { mode: "date" }),
+    isCompleted: boolean("is_completed").default(false).notNull(),
+    addedAt: timestamp("added_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueTracker: uniqueIndex("group_goal_member_trackers_unique").on(
+      table.groupGoalItemId,
+      table.userId
+    ),
+    goalIdx:  index("group_goal_member_trackers_goal_idx").on(table.groupGoalItemId),
+    userIdx:  index("group_goal_member_trackers_user_idx").on(table.userId),
+    groupIdx: index("group_goal_member_trackers_group_idx").on(table.groupId),
+  })
+);
+
+// ─── GROUP GOAL CHECK-INS ─────────────────────────────────────────────────────
+// Individual progress entries logged by members against a group goal tracker.
+
+export const groupGoalCheckIns = pgTable(
+  "group_goal_check_ins",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ggci_${nanoid(12)}`),
+    trackerId: text("tracker_id")
+      .notNull()
+      .references(() => groupGoalMemberTrackers.id, { onDelete: "cascade" }),
+    groupGoalItemId: text("group_goal_item_id")
+      .notNull()
+      .references(() => groupGoalItems.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    value: real("value").default(1).notNull(),
+    note: text("note"),
+    loggedAt: timestamp("logged_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    trackerIdx: index("group_goal_check_ins_tracker_idx").on(table.trackerId),
+    userIdx:    index("group_goal_check_ins_user_idx").on(table.userId),
+    goalIdx:    index("group_goal_check_ins_goal_idx").on(table.groupGoalItemId),
+  })
+);
+
 // ─── GROUP CHAT POSTS ─────────────────────────────────────────────────────────
 // Content capped at 100 words — enforced in the API layer before insert.
 
@@ -1004,6 +1199,7 @@ export const groupChatPosts = pgTable(
       .$type<Array<{ userId: string; emoji: string }>>()
       .default([])
       .notNull(),
+    commentCount: integer("comment_count").default(0).notNull(),
     editedAt: timestamp("edited_at", { mode: "date" }),
     // Soft-delete: content replaced with null equivalent but row retained for reaction counts
     isDeleted: boolean("is_deleted").default(false).notNull(),
@@ -1013,6 +1209,31 @@ export const groupChatPosts = pgTable(
     groupIdx:     index("group_chat_posts_group_idx").on(table.groupId),
     authorIdx:    index("group_chat_posts_author_idx").on(table.authorId),
     createdAtIdx: index("group_chat_posts_created_at_idx").on(table.groupId, table.createdAt),
+  })
+);
+
+// ─── GROUP CHAT COMMENTS ──────────────────────────────────────────────────────
+// Per-post comment threads; content capped at 100 words (API-enforced).
+
+export const groupChatComments = pgTable(
+  "group_chat_comments",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `gcc_${nanoid(12)}`),
+    postId: text("post_id")
+      .notNull()
+      .references(() => groupChatPosts.id, { onDelete: "cascade" }),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    isDeleted: boolean("is_deleted").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    postIdx:   index("group_chat_comments_post_idx").on(table.postId),
+    authorIdx: index("group_chat_comments_author_idx").on(table.authorId),
   })
 );
 
@@ -1637,6 +1858,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   reviewedJoinRequests:many(groupJoinRequests,    { relationName: "group_join_reviewer" }),
   createdGroupGoals:   many(groupGoalItems,       { relationName: "group_goal_creator" }),
   groupChatPosts:      many(groupChatPosts,       { relationName: "group_chat_author" }),
+  groupChatComments:   many(groupChatComments,    { relationName: "group_chat_comment_author" }),
   groupEngagementLogs: many(groupEngagementLogs,  { relationName: "group_engagement_user" }),
 }));
 
@@ -1905,9 +2127,15 @@ export const groupGoalItemsRelations = relations(groupGoalItems, ({ one }) => ({
   creator: one(users,  { fields: [groupGoalItems.createdBy], references: [users.id], relationName: "group_goal_creator" }),
 }));
 
-export const groupChatPostsRelations = relations(groupChatPosts, ({ one }) => ({
-  group:  one(groups, { fields: [groupChatPosts.groupId],  references: [groups.id] }),
-  author: one(users,  { fields: [groupChatPosts.authorId], references: [users.id], relationName: "group_chat_author" }),
+export const groupChatPostsRelations = relations(groupChatPosts, ({ one, many }) => ({
+  group:    one(groups, { fields: [groupChatPosts.groupId],  references: [groups.id] }),
+  author:   one(users,  { fields: [groupChatPosts.authorId], references: [users.id], relationName: "group_chat_author" }),
+  comments: many(groupChatComments),
+}));
+
+export const groupChatCommentsRelations = relations(groupChatComments, ({ one }) => ({
+  post:   one(groupChatPosts, { fields: [groupChatComments.postId],   references: [groupChatPosts.id] }),
+  author: one(users,          { fields: [groupChatComments.authorId], references: [users.id], relationName: "group_chat_comment_author" }),
 }));
 
 export const groupEngagementLogsRelations = relations(groupEngagementLogs, ({ one }) => ({
@@ -1992,7 +2220,13 @@ export type GroupJoinRequest = typeof groupJoinRequests.$inferSelect;
 export type NewGroupJoinRequest = typeof groupJoinRequests.$inferInsert;
 export type GroupGoalItem = typeof groupGoalItems.$inferSelect;
 export type NewGroupGoalItem = typeof groupGoalItems.$inferInsert;
+export type GroupGoalMemberTracker = typeof groupGoalMemberTrackers.$inferSelect;
+export type NewGroupGoalMemberTracker = typeof groupGoalMemberTrackers.$inferInsert;
+export type GroupGoalCheckIn = typeof groupGoalCheckIns.$inferSelect;
+export type NewGroupGoalCheckIn = typeof groupGoalCheckIns.$inferInsert;
 export type GroupChatPost = typeof groupChatPosts.$inferSelect;
 export type NewGroupChatPost = typeof groupChatPosts.$inferInsert;
+export type GroupChatComment = typeof groupChatComments.$inferSelect;
+export type NewGroupChatComment = typeof groupChatComments.$inferInsert;
 export type GroupEngagementLog = typeof groupEngagementLogs.$inferSelect;
 export type NewGroupEngagementLog = typeof groupEngagementLogs.$inferInsert;

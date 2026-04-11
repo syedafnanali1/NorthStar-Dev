@@ -8,10 +8,16 @@ import { getSessionUserId } from "@/lib/auth/helpers";
 import { groupsService } from "@/server/services/groups.service";
 import type { NextRequest } from "next/server";
 
+const GROUP_CATEGORIES = [
+  "health", "fitness", "finance", "mindset", "writing",
+  "reading", "career", "lifestyle", "creativity", "community", "other",
+] as const;
+
 const createGroupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(80),
   description: z.string().max(500).optional(),
   type: z.enum(["public", "private"]),
+  category: z.enum(GROUP_CATEGORIES).optional(),
   inviteUserIds: z.array(z.string()).max(99).optional().default([]),
   inviteEmails: z.array(z.string().email()).max(99).optional().default([]),
 });

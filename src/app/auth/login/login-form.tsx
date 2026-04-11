@@ -7,8 +7,26 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight, EyeOff, Sparkles } from "lucide-react";
-import { loginSchema, type LoginInput } from "@/lib/validators/auth";
+
 import { cn } from "@/lib/utils";
+import { loginSchema, type LoginInput } from "@/lib/validators/auth";
+
+interface LoginActionLink {
+  href: string;
+  label: string;
+}
+
+interface LoginCheckResponse {
+  success?: boolean;
+  code?: string;
+  message?: string;
+  data?: {
+    registerUrl?: string;
+    forgotPasswordUrl?: string;
+    verifyUrl?: string;
+    provider?: string | null;
+  };
+}
 
 export function LoginForm() {
   const router = useRouter();
@@ -16,6 +34,7 @@ export function LoginForm() {
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
   const [demoLoading, setDemoLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [serverActionLink, setServerActionLink] = useState<LoginActionLink | null>(null);
   const [providerStatus, setProviderStatus] = useState<{
     googleConfigured: boolean;
     facebookConfigured: boolean;
@@ -31,11 +50,18 @@ export function LoginForm() {
   });
 
   useEffect(() => {
+    const verified = searchParams?.get("verified");
+    if (verified === "1") {
+      setServerError("Email verified. You can sign in now.");
+      setServerActionLink(null);
+      return;
+    }
+
     const errorParam = searchParams?.get("error");
     if (errorParam) {
       setServerError(
         errorParam === "CredentialsSignin"
-          ? "Invalid email or password"
+          ? "Sign in failed. Check your credentials and try again."
           : "Authentication failed. Please try again."
       );
     }
@@ -53,16 +79,59 @@ export function LoginForm() {
   const onSubmit = async (data: LoginInput) => {
     setLoading(true);
     setServerError(null);
+    setServerActionLink(null);
+
+    const normalizedEmail = data.email.trim().toLowerCase();
 
     try {
+      const checkRes = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail, password: data.password }),
+      });
+
+      const checkJson = (await checkRes.json()) as LoginCheckResponse;
+
+      if (!checkRes.ok || checkJson.success === false) {
+        setServerError(
+          checkJson.message ?? "Unable to verify credentials. Please try again."
+        );
+
+        if (checkJson.code === "NO_ACCOUNT" && checkJson.data?.registerUrl) {
+          setServerActionLink({ href: checkJson.data.registerUrl, label: "Create account" });
+        } else if (
+          checkJson.code === "PASSWORD_NOT_SET" &&
+          (checkJson.data?.provider === "google" || checkJson.data?.provider === "facebook")
+        ) {
+          const provider = checkJson.data.provider as "google" | "facebook";
+          setLoading(false);
+          await handleOAuth(provider);
+          return;
+        } else if (
+          (
+            checkJson.code === "INCORRECT_PASSWORD" ||
+            checkJson.code === "ACCOUNT_LOCKED" ||
+            checkJson.code === "PASSWORD_NOT_SET"
+          ) &&
+          checkJson.data?.forgotPasswordUrl
+        ) {
+          setServerActionLink({ href: checkJson.data.forgotPasswordUrl, label: "Forgot password?" });
+        } else if (checkJson.code === "EMAIL_UNVERIFIED" && checkJson.data?.verifyUrl) {
+          setServerActionLink({ href: checkJson.data.verifyUrl, label: "Verify email" });
+        }
+
+        return;
+      }
+
       const result = await signIn("credentials", {
-        email: data.email.trim().toLowerCase(),
+        email: normalizedEmail,
         password: data.password,
         redirect: false,
       });
 
       if (result?.error) {
-        setServerError("Invalid email or password");
+        setServerError("Sign in failed. Please try again or reset your password.");
+        setServerActionLink({ href: "/auth/forgot-password", label: "Forgot password?" });
       } else {
         router.push("/dashboard");
         router.refresh();
@@ -99,6 +168,7 @@ export function LoginForm() {
   const handleDemoMode = async () => {
     setDemoLoading(true);
     setServerError(null);
+    setServerActionLink(null);
 
     try {
       const response = await fetch("/api/auth/demo", { method: "POST" });
@@ -186,8 +256,13 @@ export function LoginForm() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
         {serverError ? (
-          <div className="rounded-2xl bg-rose/20 px-4 py-3 text-sm text-rose">
-            {serverError}
+          <div className="rounded-2xl bg-rose/20 px-4 py-3 text-sm text-rose space-y-2">
+            <p>{serverError}</p>
+            {serverActionLink ? (
+              <Link href={serverActionLink.href} className="inline-block text-gold hover:text-gold-light">
+                {serverActionLink.label}
+              </Link>
+            ) : null}
           </div>
         ) : null}
 

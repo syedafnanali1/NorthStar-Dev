@@ -11,6 +11,8 @@ import { requireAuthUser } from "@/lib/auth/helpers";
 import { achievementService } from "@/server/services/achievements.service";
 import { analyticsService } from "@/server/services/analytics.service";
 import { goalsService } from "@/server/services/goals.service";
+import { groupEngagementService } from "@/server/services/group-engagement.service";
+import type { EngagementTier } from "@/server/services/group-engagement.service";
 
 export const metadata: Metadata = {
   title: "Analytics",
@@ -19,14 +21,17 @@ export const metadata: Metadata = {
 export default async function AnalyticsPage() {
   const user = await requireAuthUser();
 
-  const [momentum, categories, lifetime, achievements, allGoals, activityGrid] = await Promise.all([
-    analyticsService.getMomentumData(user.id, 30),
-    analyticsService.getCategoryBreakdown(user.id),
-    analyticsService.getLifetimeStats(user.id),
-    achievementService.getAllWithStatus(user.id),
-    goalsService.getAllForUser(user.id),
-    analyticsService.getActivityGrid(user.id),
-  ]);
+  const [momentum, categories, lifetime, achievements, allGoals, activityGrid, groupStats, groupNudges] =
+    await Promise.all([
+      analyticsService.getMomentumData(user.id, 30),
+      analyticsService.getCategoryBreakdown(user.id),
+      analyticsService.getLifetimeStats(user.id),
+      achievementService.getAllWithStatus(user.id),
+      goalsService.getAllForUser(user.id),
+      analyticsService.getActivityGrid(user.id),
+      groupEngagementService.getUserGroupAnalytics(user.id),
+      groupEngagementService.getNudges(user.id),
+    ]);
 
   const paceGoals: PaceGoal[] = allGoals
     .filter((g) => g.targetValue != null && g.endDate != null && !g.isCompleted)
@@ -103,6 +108,76 @@ export default async function AnalyticsPage() {
           <p className="section-label mb-4">Lifetime Statistics</p>
           <LifetimeStats stats={lifetime} />
         </div>
+
+        {/* Groups engagement section */}
+        {groupStats.length > 0 && (
+          <div className="panel-shell p-5 lg:p-6">
+            <p className="section-label mb-4">Groups</p>
+
+            {/* Nudges */}
+            {groupNudges.length > 0 && (
+              <div className="mb-5 space-y-2">
+                {groupNudges.map((nudge, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+                  >
+                    <span className="mt-0.5 text-amber-500">💬</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-amber-800">{nudge.groupName}</p>
+                      <p className="mt-0.5 text-sm text-amber-700">{nudge.message}</p>
+                    </div>
+                    <a
+                      href={`/groups/community/${nudge.groupId}`}
+                      className="flex-shrink-0 rounded-lg bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 transition-colors"
+                    >
+                      Go →
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Per-group stats table */}
+            <div className="divide-y divide-cream-dark">
+              {groupStats.map((g) => {
+                const tierColors: Record<EngagementTier, string> = {
+                  Champion:  "text-gold",
+                  Committed: "text-purple-600",
+                  Active:    "text-sage-dark",
+                  Newcomer:  "text-ink-muted",
+                };
+                return (
+                  <div key={g.groupId} className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0">
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={`/groups/community/${g.groupId}`}
+                        className="font-semibold text-sm text-ink hover:underline truncate block"
+                      >
+                        {g.groupName}
+                      </a>
+                      <div className="mt-1 flex items-center gap-3 flex-wrap">
+                        <span className="text-xs text-ink-muted">
+                          🎯 {g.goalsCompleted} goal{g.goalsCompleted !== 1 ? "s" : ""}
+                        </span>
+                        <span className="text-xs text-ink-muted">
+                          💬 {g.commentsPosted} post{g.commentsPosted !== 1 ? "s" : ""}
+                        </span>
+                        <span className="text-xs text-ink-muted">
+                          👏 {g.reactionsGiven} reaction{g.reactionsGiven !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className={`text-sm font-bold ${tierColors[g.tier]}`}>{g.tier}</p>
+                      <p className="text-xs text-ink-muted">{g.engagementScore} pts</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {paceGoals.length > 0 && (
           <div className="panel-shell p-5 lg:p-6">

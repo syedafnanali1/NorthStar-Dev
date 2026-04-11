@@ -57,6 +57,7 @@ export function CreateGroupModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<"public" | "private">("public");
+  const [category, setCategory] = useState<string>("");
 
   // Step 2 state
   const [friendSearch, setFriendSearch] = useState("");
@@ -78,6 +79,7 @@ export function CreateGroupModal({
     setName("");
     setDescription("");
     setType("public");
+    setCategory("");
     setFriendSearch("");
     setSelectedFriendIds([]);
     setEmailInput("");
@@ -145,6 +147,7 @@ export function CreateGroupModal({
           name: name.trim(),
           description: description.trim() || undefined,
           type,
+          category: category || undefined,
           inviteUserIds: selectedFriendIds,
           inviteEmails,
         }),
@@ -282,6 +285,41 @@ export function CreateGroupModal({
                     className="input w-full resize-none"
                   />
                   <p className="text-right text-[0.7rem] text-ink-muted">{description.length}/500</p>
+                </div>
+
+                {/* Category */}
+                <div className="space-y-1.5">
+                  <p className="section-label">Category</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: "health",     label: "Health",      emoji: "🌿" },
+                      { value: "fitness",    label: "Fitness",     emoji: "💪" },
+                      { value: "finance",    label: "Finance",     emoji: "💰" },
+                      { value: "mindset",    label: "Mindset",     emoji: "🧠" },
+                      { value: "writing",    label: "Writing",     emoji: "✍️" },
+                      { value: "reading",    label: "Reading",     emoji: "📚" },
+                      { value: "career",     label: "Career",      emoji: "🚀" },
+                      { value: "lifestyle",  label: "Lifestyle",   emoji: "🌟" },
+                      { value: "creativity", label: "Creativity",  emoji: "🎨" },
+                      { value: "community",  label: "Community",   emoji: "🤝" },
+                      { value: "other",      label: "Other",       emoji: "✨" },
+                    ].map((cat) => (
+                      <button
+                        key={cat.value}
+                        type="button"
+                        onClick={() => setCategory(cat.value === category ? "" : cat.value)}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                          category === cat.value
+                            ? "border-gold bg-gold/10 text-ink"
+                            : "border-cream-dark bg-cream-paper text-ink-muted hover:border-gold/40"
+                        )}
+                      >
+                        <span>{cat.emoji}</span>
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Type */}
@@ -532,6 +570,13 @@ export function CreateGroupModal({
                         )}
                       </span>
                     </div>
+
+                    {category && (
+                      <div className="flex items-center justify-between px-5 py-3">
+                        <span className="text-sm text-ink-muted">Category</span>
+                        <span className="text-sm font-medium capitalize text-ink">{category}</span>
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between px-5 py-3">
                       <span className="text-sm text-ink-muted">Members invited</span>

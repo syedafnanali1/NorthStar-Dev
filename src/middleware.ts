@@ -1,11 +1,17 @@
 // src/middleware.ts
 // Protect app routes and redirect unauthenticated users to /auth/login.
 
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth/config";
+import { getToken } from "next-auth/jwt";
 
-export default auth((req) => {
-  if (req.auth?.user?.id) {
+export default async function middleware(req: NextRequest) {
+  const token = await getToken({
+    req,
+    secret: process.env["AUTH_SECRET"] ?? process.env["NEXTAUTH_SECRET"],
+  });
+
+  if (token) {
     return NextResponse.next();
   }
 
@@ -13,7 +19,7 @@ export default auth((req) => {
   loginUrl.pathname = "/auth/login";
   loginUrl.searchParams.set("from", req.nextUrl.pathname);
   return NextResponse.redirect(loginUrl);
-});
+}
 
 export const config = {
   matcher: [

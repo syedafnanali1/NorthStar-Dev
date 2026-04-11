@@ -32,8 +32,67 @@ export async function getCurrentUser(): Promise<User | null> {
       .where(eq(users.id, userId))
       .limit(1);
     return user ?? null;
-  } catch {
-    return null;
+  } catch (error) {
+    // Compatibility fallback for databases that haven't been migrated
+    // to the newest auth columns yet.
+    console.warn("[auth] full user select failed, falling back to legacy columns", error);
+
+    try {
+      const [legacyUser] = await db
+        .select({
+          id: users.id,
+          name: users.name,
+          username: users.username,
+          email: users.email,
+          emailVerified: users.emailVerified,
+          passwordHash: users.passwordHash,
+          image: users.image,
+          age: users.age,
+          location: users.location,
+          bio: users.bio,
+          darkMode: users.darkMode,
+          hasCompletedOnboarding: users.hasCompletedOnboarding,
+          aiCoachingEnabled: users.aiCoachingEnabled,
+          timezone: users.timezone,
+          pushNotificationsEnabled: users.pushNotificationsEnabled,
+          momentumScore: users.momentumScore,
+          currentStreak: users.currentStreak,
+          longestStreak: users.longestStreak,
+          totalGoalsCompleted: users.totalGoalsCompleted,
+          xpPoints: users.xpPoints,
+          level: users.level,
+          northStarScore: users.northStarScore,
+          lastActiveAt: users.lastActiveAt,
+          groupsJoined: users.groupsJoined,
+          groupGoalsCompleted: users.groupGoalsCompleted,
+          groupCommentsPosted: users.groupCommentsPosted,
+          groupReactionsGiven: users.groupReactionsGiven,
+          groupInvitesSent: users.groupInvitesSent,
+          groupInvitesAccepted: users.groupInvitesAccepted,
+          totalGroupEngagementScore: users.totalGroupEngagementScore,
+          lastGroupActiveAt: users.lastGroupActiveAt,
+          groupBehaviorProfile: users.groupBehaviorProfile,
+          createdAt: users.createdAt,
+          updatedAt: users.updatedAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!legacyUser) return null;
+
+      return {
+        ...legacyUser,
+        phoneNumber: null,
+        dateOfBirth: null,
+        countryRegion: null,
+        alwaysVerifySignIn: false,
+        lastStepUpVerifiedAt: null,
+        sessionVersion: 1,
+      } as User;
+    } catch {
+      return null;
+    }
   }
 }
 
