@@ -22,19 +22,14 @@ import { GroupCard } from "@/components/group-goals/group-card";
 import { GroupGoalCard } from "@/components/group-goals/group-goal-card";
 import { GroupsPageClient } from "./groups-page-client";
 import type { GroupWithMeta, InvitableFriend } from "@/server/services/groups.service";
+import type { GroupGoalWithMembers } from "@/server/services/group-goals.service";
 import type { DiscoverSortBy } from "@/server/services/groups.service";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-interface LegacyGroup {
-  id: string;
-  name: string;
-  [key: string]: unknown;
-}
-
 interface GroupsPageTabsProps {
   myGroups: GroupWithMeta[];
-  myOldGroups: LegacyGroup[];
+  myOldGroups: GroupGoalWithMembers[];
   initialAllGroups: GroupWithMeta[];
   invitableFriends: InvitableFriend[];
   currentUserId: string;
@@ -326,7 +321,7 @@ export function GroupsPageTabs({
                     {myOldGroups.map((group) => (
                       <GroupGoalCard
                         key={group.id}
-                        group={group as Parameters<typeof GroupGoalCard>[0]["group"]}
+                        group={group}
                         currentUserId={currentUserId}
                       />
                     ))}
