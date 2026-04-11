@@ -25,6 +25,40 @@ interface WelcomeEmailParams {
   name: string;
 }
 
+interface WeeklyDigestEmailParams {
+  to: string;
+  name: string;
+  summary: {
+    rangeLabel: string;
+    daysLogged: number;
+    streakDays: number;
+    totalTasksCompleted: number;
+    completionRate: number;
+    topGoal: {
+      title: string;
+      progress: number;
+      unit: string | null;
+    } | null;
+    suggestions: string[];
+  };
+  coachMessage?: string;
+}
+
+interface GroupJoinRequestAlertParams {
+  to: string;
+  ownerName: string;
+  requesterName: string;
+  groupTitle: string;
+  groupUrl: string;
+}
+
+interface GroupInviteEmailParams {
+  to: string;
+  inviterName: string;
+  groupTitle: string;
+  groupUrl: string;
+}
+
 function emailHtmlWrapper(content: string): string {
   return `
 <!DOCTYPE html>
@@ -143,6 +177,102 @@ export const emailService = {
       from: FROM,
       to,
       subject: `Welcome to ${APP_NAME} ⭐`,
+      html: emailHtmlWrapper(content),
+    });
+  },
+
+  async sendWeeklyDigest({ to, name, summary, coachMessage }: WeeklyDigestEmailParams) {
+    const firstName = name.split(" ")[0] ?? name;
+    const topGoalLine = summary.topGoal
+      ? `${summary.topGoal.title}: +${summary.topGoal.progress}${summary.topGoal.unit ? ` ${summary.topGoal.unit}` : ""}`
+      : "Keep logging progress to highlight your top win next week.";
+
+    const content = `
+      <h2 style="font-size:24px;font-weight:600;color:#1A1714;margin:0 0 12px;">Your weekly digest, ${firstName}</h2>
+      <p style="font-size:15px;color:#3D3732;line-height:1.7;margin:0 0 20px;">
+        ${summary.rangeLabel} snapshot: <strong>${summary.daysLogged}</strong> logged days,
+        <strong>${summary.totalTasksCompleted}</strong> completed intentions,
+        <strong>${summary.completionRate}%</strong> completion rate, and a
+        <strong>${summary.streakDays}-day</strong> streak.
+      </p>
+      <div style="background:#F7F3EE;border-radius:12px;padding:18px;margin:0 0 20px;">
+        <p style="font-size:12px;color:#8C857D;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.08em;">Top win</p>
+        <p style="font-size:14px;color:#1A1714;margin:0;">${topGoalLine}</p>
+      </div>
+      <div style="margin:0 0 24px;">
+        <p style="font-size:12px;color:#8C857D;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.08em;">Suggested focus</p>
+        <ul style="margin:0;padding-left:18px;color:#3D3732;font-size:14px;line-height:1.65;">
+          ${(summary.suggestions.length > 0 ? summary.suggestions : ["Keep daily actions simple and consistent this week."])
+            .slice(0, 3)
+            .map((tip) => `<li style="margin:0 0 6px;">${tip}</li>`)
+            .join("")}
+        </ul>
+      </div>
+      ${
+        coachMessage
+          ? `<div style="background:#F7F3EE;border-radius:12px;padding:16px;margin:0 0 24px;">
+               <p style="font-size:12px;color:#8C857D;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.08em;">AI Coach Summary</p>
+               <p style="font-size:14px;color:#1A1714;line-height:1.65;margin:0;">${coachMessage}</p>
+             </div>`
+          : ""
+      }
+      <a href="${APP_URL}/dashboard" style="display:inline-block;background:#1A1714;color:#F7F3EE;text-decoration:none;padding:14px 28px;border-radius:100px;font-size:14px;font-weight:600;">
+        Open Dashboard →
+      </a>
+    `;
+
+    await resend.emails.send({
+      from: FROM,
+      to,
+      subject: `${APP_NAME} weekly digest`,
+      html: emailHtmlWrapper(content),
+    });
+  },
+
+  async sendGroupJoinRequestAlert({
+    to,
+    ownerName,
+    requesterName,
+    groupTitle,
+    groupUrl,
+  }: GroupJoinRequestAlertParams) {
+    const firstName = ownerName.split(" ")[0] ?? ownerName;
+    const content = `
+      <h2 style="font-size:24px;font-weight:600;color:#1A1714;margin:0 0 12px;">New group join request</h2>
+      <p style="font-size:15px;color:#3D3732;line-height:1.7;margin:0 0 24px;">
+        Hi ${firstName}, <strong>${requesterName}</strong> requested to join <strong>${groupTitle}</strong>.
+      </p>
+      <a href="${groupUrl}" style="display:inline-block;background:#1A1714;color:#F7F3EE;text-decoration:none;padding:14px 28px;border-radius:100px;font-size:14px;font-weight:600;">
+        Review request →
+      </a>
+    `;
+
+    await resend.emails.send({
+      from: FROM,
+      to,
+      subject: `New join request for ${groupTitle}`,
+      html: emailHtmlWrapper(content),
+    });
+  },
+
+  async sendGroupInvite({ to, inviterName, groupTitle, groupUrl }: GroupInviteEmailParams) {
+    const content = `
+      <h2 style="font-size:24px;font-weight:600;color:#1A1714;margin:0 0 12px;">You're invited to a group</h2>
+      <p style="font-size:15px;color:#3D3732;line-height:1.7;margin:0 0 24px;">
+        <strong>${inviterName}</strong> invited you to join the group <strong>${groupTitle}</strong> on ${APP_NAME}.
+      </p>
+      <a href="${groupUrl}" style="display:inline-block;background:#1A1714;color:#F7F3EE;text-decoration:none;padding:14px 28px;border-radius:100px;font-size:14px;font-weight:600;">
+        Open group →
+      </a>
+      <p style="font-size:12px;color:#8C857D;margin:20px 0 0;">
+        If you do not have an account yet, sign up first and then request to join.
+      </p>
+    `;
+
+    await resend.emails.send({
+      from: FROM,
+      to,
+      subject: `${inviterName} invited you to join "${groupTitle}"`,
       html: emailHtmlWrapper(content),
     });
   },

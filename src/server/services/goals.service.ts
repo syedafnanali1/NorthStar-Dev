@@ -9,9 +9,8 @@ import {
   progressEntries,
   moments,
   users,
-  userAchievements,
 } from "@/drizzle/schema";
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import type {
   Goal,
   NewGoal,
@@ -21,6 +20,12 @@ import type {
 } from "@/drizzle/schema";
 import type { CreateGoalInput, LogProgressInput, CreateMomentInput } from "@/lib/validators/goals";
 import { achievementService } from "./achievements.service";
+import { inferTaskIncrementFromText } from "@/lib/progress-intelligence";
+import { aiCoachService } from "./ai-coach.service";
+import { friendActivityService } from "./friend-activity.service";
+import { xpService } from "./xp.service";
+import { subscriptionsService } from "./subscriptions.service";
+import { integrationsService } from "./integrations.service";
 
 export interface GoalWithDetails extends Goal {
   tasks: GoalTask[];
@@ -134,6 +139,19 @@ export const goalsService = {
    * Create a new goal with optional linked tasks
    */
   async create(userId: string, input: CreateGoalInput): Promise<Goal> {
+    const goalLimit = await subscriptionsService.getGoalLimit(userId);
+    if (goalLimit !== null) {
+      const [countRow] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(goals)
+        .where(and(eq(goals.userId, userId), eq(goals.isArchived, false)));
+      if ((countRow?.count ?? 0) >= goalLimit) {
+        throw new Error(
+          `Free plan supports up to ${goalLimit} active goals. Upgrade to North Star Pro for unlimited goals.`
+        );
+      }
+    }
+
     const newGoal: NewGoal = {
       userId,
       title: input.title,
@@ -163,6 +181,16 @@ export const goalsService = {
           text: task.text,
           isRepeating: task.isRepeating,
           order: i,
+          incrementValue:
+            task.incrementValue ??
+            inferTaskIncrementFromText({
+              goalTitle: goal.title,
+              goalUnit: goal.unit,
+              goalCategory: goal.category,
+              goalTargetValue: goal.targetValue,
+              taskText: task.text,
+            }) ??
+            null,
         }))
       );
     }
@@ -218,6 +246,14 @@ export const goalsService = {
       goal.targetValue !== null &&
       goal.targetValue !== undefined &&
       newCurrent >= goal.targetValue;
+    const previousPercent =
+      goal.targetValue && goal.targetValue > 0
+        ? (goal.currentValue / goal.targetValue) * 100
+        : 0;
+    const nextPercent =
+      goal.targetValue && goal.targetValue > 0
+        ? (newCurrent / goal.targetValue) * 100
+        : 0;
 
     const [updatedGoal] = await db
       .update(goals)
@@ -232,6 +268,39 @@ export const goalsService = {
 
     if (!updatedGoal) throw new Error("Failed to update goal");
 
+    void friendActivityService.emitActivity({
+      actorUserId: userId,
+      type: "progress_log",
+      goalId,
+      payload: {
+        goalTitle: goal.title,
+        value: input.value,
+        currentValue: newCurrent,
+      },
+      notifyFriends: false,
+      link: `/goals/${goalId}`,
+    });
+
+    if (goal.targetValue && goal.targetValue > 0) {
+      const milestones = [25, 50, 75, 100].filter(
+        (milestone) => previousPercent < milestone && nextPercent >= milestone
+      );
+      for (const milestone of milestones) {
+        void friendActivityService.emitActivity({
+          actorUserId: userId,
+          type: "goal_milestone",
+          goalId,
+          payload: {
+            goalTitle: goal.title,
+            milestone,
+            message: `hit ${milestone}% on "${goal.title}"`,
+          },
+          notifyFriends: true,
+          link: `/goals/${goalId}`,
+        });
+      }
+    }
+
     // Award completion achievement
     if (isCompleted) {
       await achievementService.award(userId, "bullseye");
@@ -242,7 +311,45 @@ export const goalsService = {
       if (completedCount[0] && completedCount[0].count >= 5) {
         await achievementService.award(userId, "champion");
       }
+
+      // When a goal is completed, generate a smart "what next" recommendation.
+      void aiCoachService.createSmartSuggestionInsight(userId, goalId).catch(() => null);
+
+      void friendActivityService.emitActivity({
+        actorUserId: userId,
+        type: "goal_completed",
+        goalId,
+        payload: {
+          goalTitle: goal.title,
+          message: `completed "${goal.title}"`,
+        },
+        notifyFriends: true,
+        link: `/goals/${goalId}`,
+      });
+
+      void integrationsService
+        .emitEvent({
+          userIds: [userId],
+          event: "goal.completed",
+          payload: {
+            goalId,
+            title: goal.title,
+            currentValue: newCurrent,
+            targetValue: goal.targetValue,
+          },
+        })
+        .catch(() => null);
     }
+
+    // Keep predictive pacing alerts fresh as progress changes.
+    void aiCoachService
+      .maybeCreatePredictionInsightForGoal(userId, goalId, {
+        cooldownHours: 24,
+        createNotification: true,
+      })
+      .catch(() => null);
+
+    void xpService.calculateNorthStarScore(userId).catch(() => null);
 
     return { goal: updatedGoal, entry };
   },
@@ -275,6 +382,18 @@ export const goalsService = {
       .returning();
 
     if (!moment) throw new Error("Failed to create moment");
+
+    void friendActivityService.emitActivity({
+      actorUserId: userId,
+      type: "moment_shared",
+      goalId,
+      payload: {
+        goalTitle: goal.title,
+        preview: input.text.slice(0, 140),
+      },
+      notifyFriends: false,
+      link: `/goals/${goalId}`,
+    });
 
     // Check storyteller achievement (5+ moments)
     const momentCount = await db
@@ -324,6 +443,19 @@ export const goalsService = {
       .returning();
 
     if (!updated) throw new Error("Failed to update milestone");
+
+    void friendActivityService.emitActivity({
+      actorUserId: userId,
+      type: "goal_milestone",
+      goalId,
+      payload: {
+        goalTitle: goal.title,
+        milestone,
+        message: `completed milestone "${milestone}"`,
+      },
+      notifyFriends: true,
+      link: `/goals/${goalId}`,
+    });
 
     // Check halfway achievement
     if (

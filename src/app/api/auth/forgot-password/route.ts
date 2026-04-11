@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users, passwordResetTokens } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { forgotPasswordSchema } from "@/lib/validators/auth";
 import { emailService } from "@/lib/email";
 import { nanoid } from "nanoid";
@@ -17,12 +17,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Valid email required" }, { status: 422 });
     }
 
-    const { email } = validated.data;
+    const normalizedEmail = validated.data.email.trim().toLowerCase();
 
     const [user] = await db
-      .select({ id: users.id, name: users.name })
+      .select({ id: users.id, name: users.name, email: users.email })
       .from(users)
-      .where(eq(users.email, email))
+      .where(sql`lower(${users.email}) = ${normalizedEmail}`)
       .limit(1);
 
     // Always return 200 to prevent email enumeration
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     const resetUrl = `${process.env["NEXT_PUBLIC_APP_URL"]}/auth/reset-password?token=${token}`;
-    await emailService.sendPasswordReset({ to: email, resetUrl });
+    await emailService.sendPasswordReset({ to: user.email, resetUrl });
 
     return NextResponse.json({ success: true });
   } catch (err) {

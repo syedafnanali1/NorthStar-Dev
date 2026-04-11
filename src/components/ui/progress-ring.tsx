@@ -1,5 +1,5 @@
 // src/components/ui/progress-ring.tsx
-import { cn, ringOffset } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface ProgressRingProps {
   percent: number;

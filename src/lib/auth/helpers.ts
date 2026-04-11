@@ -1,18 +1,16 @@
 // src/lib/auth/helpers.ts
-// Server-side auth helper functions
-// Used in Server Components and API route handlers
+// Server-side auth helper functions for Server Components and API handlers.
 
-import { auth } from "./config";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { users } from "@/drizzle/schema";
 import { eq } from "drizzle-orm";
+import { users } from "@/drizzle/schema";
 import type { User } from "@/drizzle/schema";
+import { db } from "@/lib/db";
+import { auth } from "./config";
 
 /**
- * Get the current session user ID from JWT.
- * Returns null if not authenticated.
- * Use in Server Components and API routes.
+ * Get the current user ID from session.
+ * Returns null if unauthenticated.
  */
 export async function getSessionUserId(): Promise<string | null> {
   const session = await auth();
@@ -27,13 +25,16 @@ export async function getCurrentUser(): Promise<User | null> {
   const userId = await getSessionUserId();
   if (!userId) return null;
 
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  return user ?? null;
+  try {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return user ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

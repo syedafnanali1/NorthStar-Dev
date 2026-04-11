@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { goalsService } from "@/server/services/goals.service";
 import { logProgressSchema } from "@/lib/validators/goals";
+import { xpService } from "@/server/services/xp.service";
 import type { NextRequest } from "next/server";
 
 interface RouteParams {
@@ -33,6 +34,7 @@ export async function POST(
     }
 
     const result = await goalsService.logProgress(goalId, userId, validated.data);
+    void xpService.awardXP(userId, "log_progress");
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

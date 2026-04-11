@@ -1,6 +1,6 @@
 // src/app/goals/new/page.tsx
 import type { Metadata } from "next";
-import { requireAuth } from "@/lib/auth/helpers";
+import { requireAuth, requireAuthUser } from "@/lib/auth/helpers";
 import { AppLayout } from "@/components/layout/app-layout";
 import { NewGoalWizard } from "./new-goal-wizard";
 
@@ -10,18 +10,22 @@ export const metadata: Metadata = {
 
 export default async function NewGoalPage() {
   await requireAuth();
+  await requireAuthUser();
 
   return (
-    <AppLayout>
-      <div className="max-w-xl mx-auto">
-        <div className="mb-8">
-          <p className="text-2xs uppercase tracking-widest text-ink-muted mb-1">
-            Plant a Star
-          </p>
-          <h1 className="text-3xl font-serif text-ink">New Goal</h1>
-        </div>
-        <NewGoalWizard />
+    <AppLayout contentClassName="max-w-3xl lg:max-w-xl">
+      <div className="mb-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-muted">
+          Plant a New Star
+        </p>
+        <h1 className="mt-3 text-3xl font-serif text-ink sm:text-4xl">
+          Plant a New Star
+        </h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">
+          Turn an intention into something measurable, emotionally grounded, and easy to revisit.
+        </p>
       </div>
+      <NewGoalWizard />
     </AppLayout>
   );
 }

@@ -17,9 +17,9 @@ export function LifetimeStats({ stats }: LifetimeStatsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:gap-5">
       {items.map((item) => (
-        <div key={item.label} className="flex items-center gap-3">
+        <div key={item.label} className="flex items-center gap-3 lg:rounded-[1.5rem] lg:border lg:border-cream-dark lg:bg-white/70 lg:px-4 lg:py-5">
           <span className="text-2xl">{item.emoji}</span>
           <div>
             <div className="text-xl font-serif font-semibold text-ink">

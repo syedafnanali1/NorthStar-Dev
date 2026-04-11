@@ -17,6 +17,15 @@ export const saveDailyLogSchema = z.object({
     .max(2000, "Reflection must be under 2000 characters")
     .optional()
     .nullable(),
+  dailyIntentions: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        text: z.string().min(1).max(160),
+        done: z.boolean(),
+      })
+    )
+    .optional(),
   completedTaskIds: z.array(z.string()).default([]),
 });
 

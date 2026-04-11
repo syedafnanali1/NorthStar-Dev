@@ -3,124 +3,282 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { useEffect, useState } from "react";
 import { cn, initials } from "@/lib/utils";
 import type { Session } from "next-auth";
+import {
+  BarChart3,
+  CalendarDays,
+  Moon,
+  Settings,
+  Sun,
+  Target,
+  Trophy,
+  Users,
+} from "lucide-react";
+import { NotificationBell } from "@/components/notifications/notification-bell";
+import { useTheme } from "@/components/layout/theme-provider";
 
 interface SidebarProps {
-  user: Session["user"];
+  user: Session["user"] & { id?: string };
 }
 
-const NAV_ITEMS = [
-  {
-    href: "/dashboard",
-    label: "Goals",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
-      </svg>
-    ),
-  },
-  {
-    href: "/calendar",
-    label: "Daily Log",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="4" width="18" height="18" rx="3"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-      </svg>
-    ),
-  },
-  {
-    href: "/circle",
-    label: "Circle",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-      </svg>
-    ),
-  },
-  {
-    href: "/analytics",
-    label: "Analytics",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-      </svg>
-    ),
-  },
-];
+const DESKTOP_NAV_ITEMS = [
+  { href: "/dashboard", label: "Goals", icon: Target },
+  { href: "/calendar", label: "Daily Log", icon: CalendarDays },
+  { href: "/circle", label: "Circle", icon: Users },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/groups", label: "Groups", icon: Trophy },
+] as const;
+
+// Clean 5-item mobile nav — no duplicates
+const MOBILE_NAV_ITEMS = [
+  { href: "/dashboard", label: "Goals", icon: Target },
+  { href: "/calendar", label: "Log", icon: CalendarDays },
+  { href: "/circle", label: "Circle", icon: Users },
+  { href: "/groups", label: "Groups", icon: Trophy },
+  { href: "/analytics", label: "Stats", icon: BarChart3 },
+] as const;
 
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
+  const theme = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("sidebar-expanded");
+    const initial = saved !== null ? saved === "true" : window.innerWidth >= 1280;
+    setExpanded(initial);
+    document.documentElement.style.setProperty("--sidebar-width", initial ? "216px" : "72px");
+    setMounted(true);
+  }, []);
+
+  const toggleSidebar = () => {
+    setExpanded((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebar-expanded", String(next));
+      document.documentElement.style.setProperty("--sidebar-width", next ? "216px" : "72px");
+      return next;
+    });
+  };
+
+  const showLabel = mounted ? expanded : false;
 
   return (
-    <aside
-      className="fixed left-0 top-0 h-screen w-[68px] flex flex-col items-center py-5 gap-2 z-40"
-      style={{
-        background: "#1A1714",
-        borderRight: "1px solid #2A2522",
-      }}
-    >
-      {/* Logo */}
-      <Link
-        href="/dashboard"
-        className="mb-4 flex items-center justify-center w-9 h-9"
-        title="North Star"
+    <>
+      {/* ── Desktop Sidebar ──────────────────────────────────── */}
+      <aside
+        className={cn(
+          "fixed left-0 top-0 z-40 hidden h-screen flex-col border-r border-cream-dark bg-cream-paper py-3 transition-all duration-300 lg:flex",
+          mounted ? (expanded ? "w-[216px]" : "w-[72px]") : "w-[72px] xl:w-[216px]"
+        )}
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M12 2L14.4 9.6H22L15.8 14.4L18.2 22L12 17.2L5.8 22L8.2 14.4L2 9.6H9.6L12 2Z"
-            fill="#C4963A"
-            stroke="#C4963A"
-            strokeWidth="0.5"
-          />
-        </svg>
-      </Link>
-
-      {/* Nav items */}
-      <nav className="flex flex-col gap-1 flex-1">
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              className={cn(
-                "flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200",
-                isActive
-                  ? "text-gold bg-white/8"
-                  : "text-ink-muted hover:text-cream hover:bg-white/5"
-              )}
-              style={{
-                color: isActive ? "#C4963A" : undefined,
-                background: isActive ? "rgba(255,255,255,0.07)" : undefined,
-              }}
-            >
-              {item.icon}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {/* Bottom: Profile avatar */}
-      <div className="flex flex-col items-center gap-2 mt-auto">
-        <Link
-          href="/profile"
-          title="Profile"
-          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-ink overflow-hidden transition-transform hover:scale-110"
-          style={{ background: "#C4963A" }}
+        {/* Logo / Toggle */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          title={expanded ? "Collapse sidebar" : "Expand sidebar"}
+          className="mb-5 flex h-11 items-center gap-3 px-[18px] hover:opacity-75 transition-opacity"
         >
-          {user?.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.image} alt={user.name ?? "User"} className="w-full h-full object-cover" />
-          ) : (
-            <span className="text-ink font-bold text-xs">
-              {initials(user?.name)}
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-ink shadow-sm">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 2L14.4 9.6H22L15.8 14.4L18.2 22L12 17.2L5.8 22L8.2 14.4L2 9.6H9.6L12 2Z"
+                fill="#C4963A"
+              />
+            </svg>
+          </span>
+          <div className={cn("min-w-0 transition-all duration-200", showLabel ? "block" : "hidden")}>
+            <p className="text-[0.8rem] font-bold tracking-tight text-ink leading-none">NorthStar</p>
+            <p className="mt-0.5 text-[0.65rem] font-medium tracking-[0.18em] uppercase text-ink-muted leading-none">
+              Goal Tracker
+            </p>
+          </div>
+        </button>
+
+        {/* Primary Nav */}
+        <nav className="flex flex-1 flex-col gap-0.5 px-2.5">
+          {DESKTOP_NAV_ITEMS.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={!showLabel ? item.label : undefined}
+                className={cn(
+                  "group relative flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium transition-all duration-150",
+                  isActive
+                    ? "bg-ink text-cream-paper"
+                    : "text-ink-muted hover:bg-cream hover:text-ink"
+                )}
+              >
+                <Icon
+                  className="h-[17px] w-[17px] flex-shrink-0"
+                  strokeWidth={isActive ? 2.2 : 1.75}
+                />
+                <span className={cn("transition-all duration-200 truncate", showLabel ? "block" : "hidden")}>
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Bottom Actions */}
+        <div className="flex flex-col gap-0.5 px-2.5 pt-2 border-t border-cream-dark">
+          {/* Notification Bell */}
+          <div className={cn("flex h-10 items-center rounded-xl", showLabel ? "w-full px-2.5" : "justify-center")}>
+            <NotificationBell showLabel={showLabel} />
+          </div>
+
+          {/* Dark Mode Toggle */}
+          <button
+            type="button"
+            title={theme.dark ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={theme.toggle}
+            className="flex h-10 w-full items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-cream hover:text-ink"
+          >
+            {theme.dark ? (
+              <Sun className="h-[17px] w-[17px] flex-shrink-0" strokeWidth={1.75} />
+            ) : (
+              <Moon className="h-[17px] w-[17px] flex-shrink-0" strokeWidth={1.75} />
+            )}
+            <span className={cn("truncate transition-all duration-200", showLabel ? "block" : "hidden")}>
+              {theme.dark ? "Light mode" : "Dark mode"}
             </span>
-          )}
-        </Link>
-      </div>
-    </aside>
+          </button>
+
+          {/* Settings */}
+          <Link
+            href="/profile"
+            title={!showLabel ? "Settings" : undefined}
+            className={cn(
+              "flex h-10 w-full items-center gap-3 rounded-xl px-2.5 text-sm font-medium transition-all duration-150",
+              pathname.startsWith("/profile")
+                ? "bg-ink text-cream-paper"
+                : "text-ink-muted hover:bg-cream hover:text-ink"
+            )}
+          >
+            <Settings className="h-[17px] w-[17px] flex-shrink-0" strokeWidth={1.75} />
+            <span className={cn("truncate transition-all duration-200", showLabel ? "block" : "hidden")}>
+              Settings
+            </span>
+          </Link>
+
+          {/* Profile / Avatar */}
+          <Link
+            href="/profile"
+            title={user?.name ?? "Profile"}
+            className="flex h-12 w-full items-center gap-3 rounded-xl px-2.5 mt-0.5 transition-all duration-150 hover:bg-cream"
+          >
+            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gold text-[10px] font-bold text-ink ring-2 ring-cream-dark">
+              {user?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.image} alt={user.name ?? "User"} className="h-full w-full object-cover" />
+              ) : (
+                initials(user?.name)
+              )}
+            </span>
+            <div className={cn("min-w-0 transition-all duration-200", showLabel ? "block" : "hidden")}>
+              <p className="truncate text-[0.8125rem] font-semibold text-ink leading-tight">
+                {user?.name ?? "Profile"}
+              </p>
+              <p className="truncate text-[0.6875rem] text-ink-muted leading-tight mt-0.5">
+                {user?.email ?? ""}
+              </p>
+            </div>
+          </Link>
+        </div>
+      </aside>
+
+      {/* ── Mobile Top Header ────────────────────────────────── */}
+      <header className="sticky top-0 z-40 border-b border-cream-dark/50 bg-cream-paper/95 backdrop-blur-xl lg:hidden">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-2.5">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2.5"
+            title="North Star"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-ink">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 2L14.4 9.6H22L15.8 14.4L18.2 22L12 17.2L5.8 22L8.2 14.4L2 9.6H9.6L12 2Z"
+                  fill="#C4963A"
+                />
+              </svg>
+            </span>
+            <span className="text-[0.875rem] font-bold tracking-tight text-ink">NorthStar</span>
+          </Link>
+
+          <div className="ml-auto flex items-center gap-1.5">
+            {/* Notification Bell */}
+            <div className="flex items-center justify-center">
+              <NotificationBell showLabel={false} />
+            </div>
+
+            {/* Dark Mode */}
+            <button
+              type="button"
+              title={theme.dark ? "Light mode" : "Dark mode"}
+              onClick={theme.toggle}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-ink-muted transition-all hover:bg-cream hover:text-ink"
+            >
+              {theme.dark ? (
+                <Sun className="h-4 w-4" strokeWidth={1.75} />
+              ) : (
+                <Moon className="h-4 w-4" strokeWidth={1.75} />
+              )}
+            </button>
+
+            {/* Profile */}
+            <Link
+              href="/profile"
+              className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gold text-[10px] font-bold text-ink ring-2 ring-cream-dark transition-transform hover:scale-105"
+              title={user?.name ?? "Profile"}
+            >
+              {user?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.image}
+                  alt={user.name ?? "User"}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                initials(user?.name)
+              )}
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Mobile Bottom Navigation ─────────────────────────── */}
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-cream-dark/50 bg-cream-paper/98 pb-[calc(0.375rem+env(safe-area-inset-bottom))] pt-1 backdrop-blur-xl lg:hidden">
+        <div className="mx-auto grid max-w-sm grid-cols-5 gap-0.5 px-2">
+          {MOBILE_NAV_ITEMS.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 transition-all duration-150",
+                  isActive
+                    ? "bg-ink text-cream-paper"
+                    : "text-ink-muted hover:bg-cream hover:text-ink"
+                )}
+              >
+                <Icon className="h-[18px] w-[18px]" strokeWidth={isActive ? 2.2 : 1.75} />
+                <span className="text-[10px] font-semibold leading-none tracking-tight">{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+    </>
   );
 }

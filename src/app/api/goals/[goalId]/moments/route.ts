@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { goalsService } from "@/server/services/goals.service";
 import { createMomentSchema } from "@/lib/validators/goals";
+import { xpService } from "@/server/services/xp.service";
 import { db } from "@/lib/db";
 import { moments, users } from "@/drizzle/schema";
 import { eq, desc } from "drizzle-orm";
@@ -73,6 +74,7 @@ export async function POST(
     }
 
     const moment = await goalsService.addMoment(goalId, userId, validated.data);
+    void xpService.awardXP(userId, "write_moment");
     return NextResponse.json({ moment }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

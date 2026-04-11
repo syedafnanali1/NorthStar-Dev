@@ -7,6 +7,8 @@ import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { goalsService } from "@/server/services/goals.service";
 import { updateGoalSchema } from "@/lib/validators/goals";
+import { xpService } from "@/server/services/xp.service";
+import { integrationsService } from "@/server/services/integrations.service";
 import { db } from "@/lib/db";
 import { goals } from "@/drizzle/schema";
 import { eq, and } from "drizzle-orm";
@@ -66,6 +68,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams): Prom
       .set(updateData)
       .where(and(eq(goals.id, goalId), eq(goals.userId, userId)))
       .returning();
+
+    if (updated?.isCompleted === true) {
+      void xpService.awardXP(userId, "complete_goal");
+      void integrationsService
+        .emitEvent({
+          userIds: [userId],
+          event: "goal.completed",
+          payload: {
+            goalId: updated.id,
+            title: updated.title,
+            currentValue: updated.currentValue,
+            targetValue: updated.targetValue,
+          },
+        })
+        .catch(() => null);
+    }
 
     return NextResponse.json({ goal: updated });
   } catch (err) {

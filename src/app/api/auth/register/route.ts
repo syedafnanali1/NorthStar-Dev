@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { registerSchema } from "@/lib/validators/auth";
 import { emailService } from "@/lib/email";
@@ -59,20 +59,55 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { name, email, password, inviteToken } = validated.data as {
       name: string; email: string; password: string; confirmPassword: string; inviteToken?: string;
     };
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedName = name.trim();
 
-    // Check if email already exists
-    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-    if (existing) {
-      return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
-    }
+    // Check if email already exists (case-insensitive)
+    const [existing] = await db
+      .select({
+        id: users.id,
+        passwordHash: users.passwordHash,
+        name: users.name,
+      })
+      .from(users)
+      .where(sql`lower(${users.email}) = ${normalizedEmail}`)
+      .limit(1);
 
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // If user already exists via OAuth (no password hash), attach password credentials.
+    if (existing) {
+      if (existing.passwordHash) {
+        return NextResponse.json(
+          { error: "An account with this email already exists" },
+          { status: 409 }
+        );
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set({
+          passwordHash,
+          // Keep existing name unless blank
+          name: existing.name?.trim() ? existing.name : normalizedName,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, existing.id))
+        .returning();
+
+      if (!updated) throw new Error("Failed to update existing account");
+
+      return NextResponse.json(
+        { success: true, linkedExistingAccount: true },
+        { status: 200 }
+      );
+    }
+
     // Create user
     const [user] = await db
       .insert(users)
-      .values({ name, email, passwordHash, emailVerified: new Date() })
+      .values({ name: normalizedName, email: normalizedEmail, passwordHash, emailVerified: new Date() })
       .returning();
 
     if (!user) throw new Error("Failed to create user");
@@ -87,7 +122,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Send welcome email (fire and forget)
-    emailService.sendWelcome({ to: email, name }).catch(console.error);
+    emailService.sendWelcome({ to: normalizedEmail, name: normalizedName }).catch(console.error);
 
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (err) {

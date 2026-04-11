@@ -5,10 +5,17 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { db } from "@/lib/db";
-import { dailyLogs } from "@/drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { dailyLogs, goalTasks, goals } from "@/drizzle/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { saveDailyLogSchema } from "@/lib/validators/daily-log";
 import { achievementService } from "@/server/services/achievements.service";
+import { xpService } from "@/server/services/xp.service";
+import { analyticsService } from "@/server/services/analytics.service";
+import { aiCoachService } from "@/server/services/ai-coach.service";
+import { streakProtectionService } from "@/server/services/streak-protection.service";
+import { inferTaskIncrementFromText } from "@/lib/progress-intelligence";
+import { wearablesService } from "@/server/services/wearables.service";
 import type { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -65,7 +72,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const { date, mood, sleep, reflection, completedTaskIds } = validated.data;
+    const { date, mood, sleep, reflection, dailyIntentions, completedTaskIds } = validated.data;
 
     // Upsert: update if exists, insert if not
     const [existing] = await db
@@ -82,6 +89,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           mood: mood ?? null,
           sleep: sleep ?? null,
           reflection: reflection ?? null,
+          dailyIntentions: dailyIntentions ?? existing.dailyIntentions ?? [],
           completedTaskIds,
           updatedAt: new Date(),
         })
@@ -96,6 +104,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           mood: mood ?? null,
           sleep: sleep ?? null,
           reflection: reflection ?? null,
+          dailyIntentions: dailyIntentions ?? [],
           completedTaskIds,
         })
         .returning();
@@ -103,6 +112,115 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // First log achievement
       await achievementService.award(userId, "ignition");
     }
+
+    if (!sleep) {
+      const autofilledSleep = await wearablesService.autoFillSleepForDate(userId, date);
+      if (autofilledSleep) {
+        [log] = await db
+          .select()
+          .from(dailyLogs)
+          .where(and(eq(dailyLogs.userId, userId), eq(dailyLogs.date, date)))
+          .limit(1);
+      }
+    }
+
+    // Smart auto-tracking: increment goal progress for newly completed tasks
+    if (completedTaskIds && completedTaskIds.length > 0) {
+      const prevIds = new Set(existing?.completedTaskIds ?? []);
+      const newlyCompleted = completedTaskIds.filter((id) => !prevIds.has(id));
+      if (newlyCompleted.length > 0) {
+        // Look up each task's metadata
+        const taskRows = await db
+          .select({
+            id: goalTasks.id,
+            goalId: goalTasks.goalId,
+            text: goalTasks.text,
+            incrementValue: goalTasks.incrementValue,
+          })
+          .from(goalTasks)
+          .where(inArray(goalTasks.id, newlyCompleted));
+
+        const goalIds = Array.from(new Set(taskRows.map((task) => task.goalId)));
+        const goalRows =
+          goalIds.length > 0
+            ? await db
+                .select({
+                  id: goals.id,
+                  title: goals.title,
+                  unit: goals.unit,
+                  category: goals.category,
+                  targetValue: goals.targetValue,
+                })
+                .from(goals)
+                .where(and(eq(goals.userId, userId), inArray(goals.id, goalIds)))
+            : [];
+
+        const goalById = new Map(goalRows.map((goal) => [goal.id, goal]));
+
+        // Sum increment amounts by goalId. If a task has no increment value yet,
+        // infer it from task text + goal context and persist that learned value.
+        const goalIncrements = new Map<string, number>();
+        const learnedTaskIncrements: Array<{ taskId: string; value: number }> = [];
+        for (const t of taskRows) {
+          const goal = goalById.get(t.goalId);
+          const inferredAmount =
+            goal
+              ? inferTaskIncrementFromText({
+                  goalTitle: goal.title,
+                  goalUnit: goal.unit,
+                  goalCategory: goal.category,
+                  goalTargetValue: goal.targetValue,
+                  taskText: t.text,
+                })
+              : null;
+          const amount = t.incrementValue ?? inferredAmount ?? 1;
+
+          if (t.incrementValue == null && inferredAmount != null) {
+            learnedTaskIncrements.push({ taskId: t.id, value: inferredAmount });
+          }
+
+          goalIncrements.set(t.goalId, (goalIncrements.get(t.goalId) ?? 0) + amount);
+        }
+
+        for (const learned of learnedTaskIncrements) {
+          await db
+            .update(goalTasks)
+            .set({ incrementValue: learned.value })
+            .where(eq(goalTasks.id, learned.taskId));
+        }
+
+        // Increment ALL goals (both habit and metric) — smart tracking for all
+        for (const [goalId, amount] of goalIncrements) {
+          await db
+            .update(goals)
+            .set({ currentValue: sql`current_value + ${amount}` })
+            .where(and(eq(goals.id, goalId), eq(goals.userId, userId)));
+        }
+
+        for (const goalId of goalIncrements.keys()) {
+          void aiCoachService
+            .maybeCreatePredictionInsightForGoal(userId, goalId, {
+              cooldownHours: 24,
+              createNotification: true,
+            })
+            .catch(() => null);
+        }
+      }
+    }
+
+    // Award XP for check-in, plus per completed task
+    void xpService.awardXP(userId, "post_checkin");
+    const taskCount = completedTaskIds?.length ?? 0;
+    for (let i = 0; i < taskCount; i++) {
+      void xpService.awardXP(userId, "complete_task");
+    }
+
+    // Refresh rolling momentum snapshot in the background after each check-in.
+    void analyticsService.getMomentumData(userId, 30).catch(() => null);
+    // Refresh behavior intelligence signals in the background for smarter suggestions.
+    void analyticsService.getBehaviorIntelligence(userId, 56).catch(() => null);
+    // Award a streak freeze every 7 days of sustained consistency.
+    void streakProtectionService.awardWeeklyFreeze(userId).catch(() => null);
 
     return NextResponse.json({ log }, { status: 200 });
   } catch (err) {

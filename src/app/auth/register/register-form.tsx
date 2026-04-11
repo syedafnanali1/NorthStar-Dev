@@ -3,8 +3,8 @@
 
 import { useState } from "react";
 import { useEffect } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registerSchema, type RegisterInput } from "@/lib/validators/auth";
@@ -24,7 +24,6 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
     facebookConfigured: boolean;
     databaseConfigured: boolean;
   } | null>(null);
-
   const { register, handleSubmit, formState: { errors } } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
   });
@@ -44,14 +43,31 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
     setLoading(true);
     setServerError(null);
     try {
+      const normalizedEmail = data.email.trim().toLowerCase();
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, inviteToken }),
+        body: JSON.stringify({ ...data, email: normalizedEmail, inviteToken }),
       });
       const json = await res.json() as { error?: string };
-      if (!res.ok) { setServerError(json.error ?? "Registration failed"); return; }
-      await signIn("credentials", { email: data.email, password: data.password, callbackUrl: "/dashboard" });
+      if (!res.ok) {
+        setServerError(json.error ?? "Registration failed");
+        return;
+      }
+
+      const signInResult = await signIn("credentials", {
+        email: normalizedEmail,
+        password: data.password,
+        redirect: false,
+        callbackUrl: "/dashboard",
+      });
+
+      if (signInResult?.error) {
+        setServerError("Registration completed, but sign in failed. Please sign in manually.");
+        return;
+      }
+
+      router.push("/dashboard");
     } catch {
       setServerError("Something went wrong. Please try again.");
     } finally {
@@ -105,6 +121,11 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
       </div>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
         {serverError && <div className="px-3 py-2 rounded-lg bg-rose/20 text-rose text-sm">{serverError}</div>}
+        {providerStatus && !providerStatus.databaseConfigured ? (
+          <div className="px-3 py-2 rounded-lg bg-amber-200/10 text-amber-300 text-sm">
+            Database is not configured. Email registration will not work until DATABASE_URL is set.
+          </div>
+        ) : null}
         <div>
           <input {...register("name")} placeholder="Full Name" className={inputClass(!!errors.name)} />
           {errors.name && <p className="text-xs text-rose mt-1">{errors.name.message}</p>}
@@ -121,7 +142,11 @@ export function RegisterForm({ inviteToken }: RegisterFormProps) {
           <input {...register("confirmPassword")} type="password" placeholder="Confirm Password" className={inputClass(!!errors.confirmPassword)} />
           {errors.confirmPassword && <p className="text-xs text-rose mt-1">{errors.confirmPassword.message}</p>}
         </div>
-        <button type="submit" disabled={loading} className="w-full py-3 px-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-gold text-ink hover:opacity-90 active:scale-[0.98] disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={loading || (providerStatus ? !providerStatus.databaseConfigured : false)}
+          className="w-full py-3 px-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-gold text-ink hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+        >
           {loading ? <div className="w-4 h-4 border-2 border-ink/20 border-t-ink rounded-full animate-spin" /> : null}
           Create Account →
         </button>

@@ -14,6 +14,7 @@ import {
   primaryKey,
   uniqueIndex,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -60,6 +61,126 @@ export const connectionStatusEnum = pgEnum("connection_status", [
   "blocked",
 ]);
 
+export const aiInsightTypeEnum = pgEnum("ai_insight_type", [
+  "weekly_review",
+  "nudge",
+  "correlation",
+  "suggestion",
+  "prediction",
+]);
+
+export const groupGoalRoleEnum = pgEnum("group_goal_role", [
+  "creator",
+  "member",
+]);
+
+export const groupGoalJoinRequestStatusEnum = pgEnum(
+  "group_goal_join_request_status",
+  ["pending", "approved", "rejected"]
+);
+
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "streak_risk",
+  "friend_milestone",
+  "achievement_unlocked",
+  "weekly_review",
+  "group_message",
+  "comment",
+  "reaction",
+  "level_up",
+  "challenge_update",
+  "group_milestone",
+  "friend_activity",
+  "challenge_rank",
+  "wearable_sync",
+  "reengagement",
+]);
+
+export const templateSubmissionStatusEnum = pgEnum(
+  "template_submission_status",
+  ["pending", "approved", "rejected"]
+);
+
+export const friendActivityTypeEnum = pgEnum("friend_activity_type", [
+  "progress_log",
+  "goal_milestone",
+  "goal_completed",
+  "moment_shared",
+  "challenge_joined",
+  "challenge_completed",
+  "group_milestone",
+]);
+
+export const challengeStatusEnum = pgEnum("challenge_status", [
+  "upcoming",
+  "active",
+  "completed",
+  "archived",
+]);
+
+export const wearableProviderEnum = pgEnum("wearable_provider", [
+  "apple_health",
+  "google_fit",
+  "manual_import",
+]);
+
+export const wearableMetricTypeEnum = pgEnum("wearable_metric_type", [
+  "steps",
+  "distance_km",
+  "sleep_hours",
+  "calories",
+  "heart_rate",
+  "weight",
+  "active_minutes",
+]);
+
+export const visionBoardItemTypeEnum = pgEnum("vision_board_item_type", [
+  "image",
+  "quote",
+  "text",
+]);
+
+// ─── GROUP FEATURE ENUMS ──────────────────────────────────────────────────────
+
+export const groupTypeEnum = pgEnum("group_type", ["public", "private"]);
+
+export const groupMemberRoleEnum = pgEnum("group_member_role", [
+  "owner",
+  "admin",
+  "member",
+]);
+
+export const groupMemberStatusEnum = pgEnum("group_member_status", [
+  "active",
+  "pending",
+  "banned",
+]);
+
+export const groupGoalCreatedViaEnum = pgEnum("group_goal_created_via", [
+  "ai",
+  "manual",
+]);
+
+export const groupGoalTrackingFrequencyEnum = pgEnum(
+  "group_goal_tracking_frequency",
+  ["daily", "weekly", "monthly", "yearly", "custom"]
+);
+
+export const groupGoalStatusEnum = pgEnum("group_goal_status", [
+  "active",
+  "completed",
+  "archived",
+]);
+
+export const groupEngagementActionEnum = pgEnum("group_engagement_action", [
+  "post_comment",
+  "react",
+  "complete_goal",
+  "invite_member",
+  "join_group",
+  "add_to_calendar",
+]);
+
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
 export const users = pgTable("users", {
@@ -67,6 +188,7 @@ export const users = pgTable("users", {
     .primaryKey()
     .$defaultFn(() => `usr_${nanoid(12)}`),
   name: text("name"),
+  username: text("username").unique(),
   email: text("email").unique().notNull(),
   emailVerified: timestamp("email_verified", { mode: "date" }),
   passwordHash: text("password_hash"),
@@ -77,12 +199,34 @@ export const users = pgTable("users", {
   bio: text("bio"),
   // Settings
   darkMode: boolean("dark_mode").default(false).notNull(),
+  hasCompletedOnboarding: boolean("has_completed_onboarding").default(false).notNull(),
+  aiCoachingEnabled: boolean("ai_coaching_enabled").default(true).notNull(),
+  timezone: text("timezone").default("UTC").notNull(),
+  pushNotificationsEnabled: boolean("push_notifications_enabled").default(true).notNull(),
   // Stats (denormalized for performance)
   momentumScore: integer("momentum_score").default(0).notNull(),
   currentStreak: integer("current_streak").default(0).notNull(),
   longestStreak: integer("longest_streak").default(0).notNull(),
   totalGoalsCompleted: integer("total_goals_completed").default(0).notNull(),
+  // XP / Leveling
+  xpPoints: integer("xp_points").default(0).notNull(),
+  level: integer("level").default(1).notNull(),
+  northStarScore: integer("north_star_score").default(0).notNull(),
   lastActiveAt: timestamp("last_active_at", { mode: "date" }),
+  // ── Group engagement (denormalized; written on every group action for AI learning) ──
+  groupsJoined: integer("groups_joined").default(0).notNull(),
+  groupGoalsCompleted: integer("group_goals_completed").default(0).notNull(),
+  groupCommentsPosted: integer("group_comments_posted").default(0).notNull(),
+  groupReactionsGiven: integer("group_reactions_given").default(0).notNull(),
+  groupInvitesSent: integer("group_invites_sent").default(0).notNull(),
+  groupInvitesAccepted: integer("group_invites_accepted").default(0).notNull(),
+  totalGroupEngagementScore: integer("total_group_engagement_score").default(0).notNull(),
+  lastGroupActiveAt: timestamp("last_group_active_at", { mode: "date" }),
+  // Flexible JSON blob for AI behavioral analysis across group actions
+  groupBehaviorProfile: jsonb("group_behavior_profile")
+    .$type<Record<string, unknown>>()
+    .default({})
+    .notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -213,6 +357,8 @@ export const goalTasks = pgTable(
     text: text("text").notNull(),
     isRepeating: boolean("is_repeating").default(true).notNull(),
     order: integer("order").default(0).notNull(),
+    // Amount to auto-increment goal progress when this task is completed
+    incrementValue: real("increment_value"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (table) => ({
@@ -228,9 +374,10 @@ export const progressEntries = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => `prog_${nanoid(12)}`),
-    goalId: text("goal_id")
-      .notNull()
-      .references(() => goals.id, { onDelete: "cascade" }),
+    // nullable: null when this entry belongs to a group goal instead
+    goalId: text("goal_id").references(() => goals.id, { onDelete: "cascade" }),
+    // set when the entry is a group goal contribution
+    groupGoalId: text("group_goal_id"),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -285,6 +432,11 @@ export const dailyLogs = pgTable(
     mood: moodEnum("mood"),
     sleep: sleepEnum("sleep"),
     reflection: text("reflection"),
+    // Custom one-off intentions for this day (outside regular goal tasks)
+    dailyIntentions: jsonb("daily_intentions")
+      .$type<Array<{ id: string; text: string; done: boolean }>>()
+      .default([])
+      .notNull(),
     // Completed task IDs for this day (JSON array)
     completedTaskIds: jsonb("completed_task_ids")
       .$type<string[]>()
@@ -434,6 +586,53 @@ export const invitations = pgTable(
 
 // ─── ACHIEVEMENTS ─────────────────────────────────────────────────────────────
 
+export const friendQrCodes = pgTable(
+  "friend_qr_codes",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `fqr_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    code: text("code")
+      .unique()
+      .notNull()
+      .$defaultFn(() => nanoid(28)),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    usedAt: timestamp("used_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    codeIdx: uniqueIndex("friend_qr_codes_code_idx").on(table.code),
+    userIdx: index("friend_qr_codes_user_idx").on(table.userId),
+  })
+);
+
+export const friendActivityEvents = pgTable(
+  "friend_activity_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `fae_${nanoid(12)}`),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: friendActivityTypeEnum("type").notNull(),
+    goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
+    challengeId: text("challenge_id"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    actorIdx: index("friend_activity_events_actor_idx").on(table.actorUserId),
+    createdAtIdx: index("friend_activity_events_created_at_idx").on(table.createdAt),
+  })
+);
+
 export const userAchievements = pgTable(
   "user_achievements",
   {
@@ -478,7 +677,935 @@ export const sharedGoals = pgTable(
   })
 );
 
+// ─── GROUP GOALS ──────────────────────────────────────────────────────────────
+
+export const groupGoals = pgTable(
+  "group_goals",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `gg_${nanoid(12)}`),
+    creatorId: text("creator_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    category: goalCategoryEnum("category").notNull(),
+    targetValue: real("target_value"),
+    currentValue: real("current_value").default(0).notNull(),
+    unit: text("unit"),
+    emoji: text("emoji"),
+    color: text("color").notNull().default("#C4963A"),
+    startDate: timestamp("start_date", { mode: "date" }),
+    endDate: timestamp("end_date", { mode: "date" }),
+    isPublic: boolean("is_public").default(false).notNull(),
+    memberLimit: integer("member_limit").default(20).notNull(),
+    isArchived: boolean("is_archived").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    creatorIdx: index("group_goals_creator_idx").on(table.creatorId),
+    publicIdx: index("group_goals_public_idx").on(table.isPublic),
+  })
+);
+
+export const groupGoalMembers = pgTable(
+  "group_goal_members",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ggm_${nanoid(12)}`),
+    groupGoalId: text("group_goal_id")
+      .notNull()
+      .references(() => groupGoals.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contribution: real("contribution").default(0).notNull(),
+    role: groupGoalRoleEnum("role").default("member").notNull(),
+    joinedAt: timestamp("joined_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueMember: uniqueIndex("group_goal_members_unique_idx").on(
+      table.groupGoalId,
+      table.userId
+    ),
+    groupGoalIdIdx: index("group_goal_members_group_idx").on(table.groupGoalId),
+    userIdIdx: index("group_goal_members_user_idx").on(table.userId),
+  })
+);
+
+export const groupGoalJoinRequests = pgTable(
+  "group_goal_join_requests",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ggjr_${nanoid(12)}`),
+    groupGoalId: text("group_goal_id")
+      .notNull()
+      .references(() => groupGoals.id, { onDelete: "cascade" }),
+    requesterId: text("requester_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: groupGoalJoinRequestStatusEnum("status").default("pending").notNull(),
+    note: text("note"),
+    reviewedAt: timestamp("reviewed_at", { mode: "date" }),
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueRequest: uniqueIndex("group_goal_join_requests_unique_idx").on(
+      table.groupGoalId,
+      table.requesterId
+    ),
+    groupGoalStatusIdx: index("group_goal_join_requests_group_status_idx").on(
+      table.groupGoalId,
+      table.status
+    ),
+    requesterIdx: index("group_goal_join_requests_requester_idx").on(table.requesterId),
+  })
+);
+
+export const groupGoalMessages = pgTable(
+  "group_goal_messages",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ggmsg_${nanoid(12)}`),
+    groupGoalId: text("group_goal_id")
+      .notNull()
+      .references(() => groupGoals.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    groupGoalIdIdx: index("group_goal_messages_group_idx").on(table.groupGoalId),
+    createdAtIdx: index("group_goal_messages_created_at_idx").on(table.createdAt),
+  })
+);
+
+// ─── GOAL TEMPLATES ───────────────────────────────────────────────────────────
+
+export const groupGoalMilestones = pgTable(
+  "group_goal_milestones",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ggms_${nanoid(12)}`),
+    groupGoalId: text("group_goal_id")
+      .notNull()
+      .references(() => groupGoals.id, { onDelete: "cascade" }),
+    milestonePercent: integer("milestone_percent").notNull(),
+    triggeredByUserId: text("triggered_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueMilestone: uniqueIndex("group_goal_milestones_unique_idx").on(
+      table.groupGoalId,
+      table.milestonePercent
+    ),
+    groupIdx: index("group_goal_milestones_group_idx").on(table.groupGoalId),
+  })
+);
+
+// ─── GROUPS (community containers) ───────────────────────────────────────────
+
+export const groups = pgTable(
+  "groups",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `grp_${nanoid(12)}`),
+    name: text("name").notNull(),
+    description: text("description"),
+    type: groupTypeEnum("type").default("public").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    coverImage: text("cover_image"),
+    // Denormalized counts — updated on every membership change
+    memberCount: integer("member_count").default(0).notNull(),
+    // Computed from group_engagement_logs; updated by background job or trigger
+    engagementScore: integer("engagement_score").default(0).notNull(),
+    // Rank among all groups; null until first ranking run
+    popularityRank: integer("popularity_rank"),
+    isArchived: boolean("is_archived").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    typeIdx:    index("groups_type_idx").on(table.type),
+    creatorIdx: index("groups_creator_idx").on(table.createdBy),
+    rankIdx:    index("groups_rank_idx").on(table.popularityRank),
+  })
+);
+
+// ─── GROUP MEMBERS ────────────────────────────────────────────────────────────
+
+export const groupMembers = pgTable(
+  "group_members",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `gmbr_${nanoid(12)}`),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: groupMemberRoleEnum("role").default("member").notNull(),
+    status: groupMemberStatusEnum("status").default("active").notNull(),
+    // Who sent the invitation that led to this membership (null if self-joined)
+    invitedBy: text("invited_by").references(() => users.id, { onDelete: "set null" }),
+    joinedAt: timestamp("joined_at", { mode: "date" }).defaultNow().notNull(),
+    lastActiveAt: timestamp("last_active_at", { mode: "date" }),
+    // Per-member engagement metrics for leaderboards and AI analysis
+    engagementScore: integer("engagement_score").default(0).notNull(),
+    goalsCompleted: integer("goals_completed").default(0).notNull(),
+    commentsPosted: integer("comments_posted").default(0).notNull(),
+    reactionsGiven: integer("reactions_given").default(0).notNull(),
+  },
+  (table) => ({
+    uniqueMember: uniqueIndex("group_members_unique_idx").on(table.groupId, table.userId),
+    groupIdx:     index("group_members_group_idx").on(table.groupId),
+    userIdx:      index("group_members_user_idx").on(table.userId),
+    statusIdx:    index("group_members_status_idx").on(table.groupId, table.status),
+  })
+);
+
+// ─── GROUP INVITES ────────────────────────────────────────────────────────────
+
+export const groupInvites = pgTable(
+  "group_invites",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ginv_${nanoid(12)}`),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    invitedBy: text("invited_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Exactly one of inviteeUserId or inviteeEmail must be set
+    inviteeUserId: text("invitee_user_id").references(() => users.id, { onDelete: "cascade" }),
+    inviteeEmail: text("invitee_email"),
+    status: invitationStatusEnum("status").default("pending").notNull(),
+    sentAt: timestamp("sent_at", { mode: "date" }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+  },
+  (table) => ({
+    groupIdx:    index("group_invites_group_idx").on(table.groupId),
+    inviterIdx:  index("group_invites_inviter_idx").on(table.invitedBy),
+    inviteeIdx:  index("group_invites_invitee_user_idx").on(table.inviteeUserId),
+    statusIdx:   index("group_invites_status_idx").on(table.groupId, table.status),
+  })
+);
+
+// ─── GROUP JOIN REQUESTS (public groups only) ─────────────────────────────────
+
+export const groupJoinRequests = pgTable(
+  "group_join_requests",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `gjr_${nanoid(12)}`),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    requesterId: text("requester_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: groupGoalJoinRequestStatusEnum("status").default("pending").notNull(),
+    note: text("note"),
+    requestedAt: timestamp("requested_at", { mode: "date" }).defaultNow().notNull(),
+    reviewedBy: text("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { mode: "date" }),
+  },
+  (table) => ({
+    uniqueRequest: uniqueIndex("group_join_requests_unique_idx").on(table.groupId, table.requesterId),
+    groupStatusIdx: index("group_join_requests_group_status_idx").on(table.groupId, table.status),
+    requesterIdx:   index("group_join_requests_requester_idx").on(table.requesterId),
+  })
+);
+
+// ─── GROUP GOAL ITEMS (goals scoped to a group) ───────────────────────────────
+
+export const groupGoalItems = pgTable(
+  "group_goal_items",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ggi_${nanoid(12)}`),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    category: goalCategoryEnum("category").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdVia: groupGoalCreatedViaEnum("created_via").default("manual").notNull(),
+    trackingFrequency: groupGoalTrackingFrequencyEnum("tracking_frequency")
+      .default("daily")
+      .notNull(),
+    // Only populated when trackingFrequency = "custom"
+    customFrequencyLabel: text("custom_frequency_label"),
+    startDate: timestamp("start_date", { mode: "date" }),
+    endDate: timestamp("end_date", { mode: "date" }),
+    // Stored as a JSON array of milestone label strings
+    milestones: jsonb("milestones").$type<string[]>().default([]).notNull(),
+    status: groupGoalStatusEnum("status").default("active").notNull(),
+    targetValue: real("target_value"),
+    currentValue: real("current_value").default(0).notNull(),
+    unit: text("unit"),
+    emoji: text("emoji"),
+    color: text("color").default("#C4963A").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    groupIdx:    index("group_goal_items_group_idx").on(table.groupId),
+    creatorIdx:  index("group_goal_items_creator_idx").on(table.createdBy),
+    statusIdx:   index("group_goal_items_status_idx").on(table.groupId, table.status),
+  })
+);
+
+// ─── GROUP CHAT POSTS ─────────────────────────────────────────────────────────
+// Content capped at 100 words — enforced in the API layer before insert.
+
+export const groupChatPosts = pgTable(
+  "group_chat_posts",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `gcp_${nanoid(12)}`),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Server validates word count <= 100 before insert/update
+    content: text("content").notNull(),
+    // [{ userId: string, emoji: string }] — one reaction per user per emoji
+    reactions: jsonb("reactions")
+      .$type<Array<{ userId: string; emoji: string }>>()
+      .default([])
+      .notNull(),
+    editedAt: timestamp("edited_at", { mode: "date" }),
+    // Soft-delete: content replaced with null equivalent but row retained for reaction counts
+    isDeleted: boolean("is_deleted").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    groupIdx:     index("group_chat_posts_group_idx").on(table.groupId),
+    authorIdx:    index("group_chat_posts_author_idx").on(table.authorId),
+    createdAtIdx: index("group_chat_posts_created_at_idx").on(table.groupId, table.createdAt),
+  })
+);
+
+// ─── GROUP ENGAGEMENT LOGS ────────────────────────────────────────────────────
+// Append-only audit log. Every group action writes one row here AND increments
+// the corresponding counter on users.group_behavior_profile for AI analysis.
+
+export const groupEngagementLogs = pgTable(
+  "group_engagement_logs",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `gel_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    action: groupEngagementActionEnum("action").notNull(),
+    // Flexible payload — e.g. { goalId, postId, emoji, inviteeId }
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    timestamp: timestamp("timestamp", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx:      index("group_engagement_logs_user_idx").on(table.userId),
+    groupIdx:     index("group_engagement_logs_group_idx").on(table.groupId),
+    actionIdx:    index("group_engagement_logs_action_idx").on(table.action),
+    timelineIdx:  index("group_engagement_logs_timeline_idx").on(table.userId, table.timestamp),
+  })
+);
+
+export const challenges = pgTable(
+  "challenges",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `chl_${nanoid(12)}`),
+    creatorId: text("creator_id").references(() => users.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    category: goalCategoryEnum("category").default("custom").notNull(),
+    targetValue: real("target_value").notNull(),
+    unit: text("unit").notNull(),
+    startDate: timestamp("start_date", { mode: "date" }).notNull(),
+    endDate: timestamp("end_date", { mode: "date" }).notNull(),
+    isPublic: boolean("is_public").default(true).notNull(),
+    isSponsored: boolean("is_sponsored").default(false).notNull(),
+    sponsorName: text("sponsor_name"),
+    sponsorPrize: text("sponsor_prize"),
+    isAiMicro: boolean("is_ai_micro").default(false).notNull(),
+    status: challengeStatusEnum("status").default("upcoming").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    statusIdx: index("challenges_status_idx").on(table.status),
+    publicIdx: index("challenges_public_idx").on(table.isPublic),
+    startIdx: index("challenges_start_idx").on(table.startDate),
+  })
+);
+
+export const challengeParticipants = pgTable(
+  "challenge_participants",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `chp_${nanoid(12)}`),
+    challengeId: text("challenge_id")
+      .notNull()
+      .references(() => challenges.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    currentValue: real("current_value").default(0).notNull(),
+    joinedAt: timestamp("joined_at", { mode: "date" }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { mode: "date" }),
+  },
+  (table) => ({
+    uniqueParticipant: uniqueIndex("challenge_participants_unique_idx").on(
+      table.challengeId,
+      table.userId
+    ),
+    challengeIdx: index("challenge_participants_challenge_idx").on(table.challengeId),
+    userIdx: index("challenge_participants_user_idx").on(table.userId),
+  })
+);
+
+export const challengeProgressEntries = pgTable(
+  "challenge_progress_entries",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `chpr_${nanoid(12)}`),
+    challengeId: text("challenge_id")
+      .notNull()
+      .references(() => challenges.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    value: real("value").notNull(),
+    note: text("note"),
+    loggedAt: timestamp("logged_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    challengeIdx: index("challenge_progress_entries_challenge_idx").on(table.challengeId),
+    userIdx: index("challenge_progress_entries_user_idx").on(table.userId),
+    loggedAtIdx: index("challenge_progress_entries_logged_at_idx").on(table.loggedAt),
+  })
+);
+
+export const wearableConnections = pgTable(
+  "wearable_connections",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `wrc_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: wearableProviderEnum("provider").notNull(),
+    externalUserId: text("external_user_id"),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    scopes: jsonb("scopes").$type<string[]>().default([]).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueProviderPerUser: uniqueIndex("wearable_connections_unique_idx").on(
+      table.userId,
+      table.provider
+    ),
+    userIdx: index("wearable_connections_user_idx").on(table.userId),
+  })
+);
+
+export const wearableDataPoints = pgTable(
+  "wearable_data_points",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `wdp_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: wearableProviderEnum("provider").notNull(),
+    metricType: wearableMetricTypeEnum("metric_type").notNull(),
+    value: real("value").notNull(),
+    recordedAt: timestamp("recorded_at", { mode: "date" }).notNull(),
+    sourcePayload: jsonb("source_payload")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userMetricDateIdx: index("wearable_data_points_user_metric_idx").on(
+      table.userId,
+      table.metricType,
+      table.recordedAt
+    ),
+    uniqueSampleIdx: uniqueIndex("wearable_data_points_unique_idx").on(
+      table.userId,
+      table.provider,
+      table.metricType,
+      table.recordedAt
+    ),
+  })
+);
+
+export const goalVisionBoardItems = pgTable(
+  "goal_vision_board_items",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `vbi_${nanoid(12)}`),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => goals.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemType: visionBoardItemTypeEnum("item_type").notNull(),
+    content: text("content").notNull(),
+    assetUrl: text("asset_url"),
+    quoteAuthor: text("quote_author"),
+    x: real("x").default(0.5).notNull(),
+    y: real("y").default(0.5).notNull(),
+    width: real("width").default(0.3).notNull(),
+    height: real("height").default(0.2).notNull(),
+    zIndex: integer("z_index").default(0).notNull(),
+    style: jsonb("style")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    goalIdx: index("goal_vision_board_items_goal_idx").on(table.goalId),
+    userIdx: index("goal_vision_board_items_user_idx").on(table.userId),
+    goalZIdx: index("goal_vision_board_items_goal_z_idx").on(table.goalId, table.zIndex),
+  })
+);
+
+export const goalTemplates = pgTable("goal_templates", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => `tpl_${nanoid(12)}`),
+  title: text("title").notNull(),
+  category: goalCategoryEnum("category").notNull(),
+  emoji: text("emoji").notNull(),
+  color: text("color").notNull().default("#C4963A"),
+  description: text("description").notNull(),
+  targetValue: real("target_value"),
+  unit: text("unit"),
+  suggestedMilestones: jsonb("suggested_milestones").$type<string[]>().default([]).notNull(),
+  suggestedTasks: jsonb("suggested_tasks").$type<string[]>().default([]).notNull(),
+  motivationalPrompts: jsonb("motivational_prompts")
+    .$type<string[]>()
+    .default([])
+    .notNull(),
+  timeframeDays: integer("timeframe_days"),
+  isOfficial: boolean("is_official").default(false).notNull(),
+  isCommunity: boolean("is_community").default(false).notNull(),
+  submissionStatus: templateSubmissionStatusEnum("submission_status")
+    .default("approved")
+    .notNull(),
+  usageCount: integer("usage_count").default(0).notNull(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  // Legacy columns kept for backwards compat
+  defaultWhy: text("default_why"),
+  defaultTasks: jsonb("default_tasks").$type<string[]>().default([]).notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `notif_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: notificationTypeEnum("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    link: text("link"),
+    channel: text("channel").default("in_app").notNull(),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    scheduledFor: timestamp("scheduled_for", { mode: "date" }),
+    sentAt: timestamp("sent_at", { mode: "date" }),
+    isRead: boolean("is_read").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIsReadIdx: index("notifications_user_id_is_read_idx").on(table.userId, table.isRead, table.createdAt),
+    createdAtIdx: index("notifications_created_at_idx").on(table.createdAt),
+    scheduledIdx: index("notifications_scheduled_idx").on(table.scheduledFor),
+  })
+);
+
+// ─── AI INSIGHTS ──────────────────────────────────────────────────────────────
+
+export const aiInsights = pgTable(
+  "ai_insights",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ai_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: aiInsightTypeEnum("type").notNull(),
+    content: text("content").notNull(),
+    goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
+    isRead: boolean("is_read").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("ai_insights_user_id_idx").on(table.userId),
+    createdAtIdx: index("ai_insights_created_at_idx").on(table.createdAt),
+  })
+);
+
+// ─── COMMENTS ─────────────────────────────────────────────────────────────────
+
+export const comments = pgTable(
+  "comments",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `cmt_${nanoid(12)}`),
+    postId: text("post_id")
+      .notNull()
+      .references(() => circlePosts.id, { onDelete: "cascade" }),
+    parentCommentId: text("parent_comment_id").references(
+      (): AnyPgColumn => comments.id,
+      { onDelete: "cascade" }
+    ),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    isDeleted: boolean("is_deleted").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    postIdCreatedAtIdx: index("comments_post_id_created_at_idx").on(table.postId, table.createdAt),
+    userIdIdx: index("comments_user_id_idx").on(table.userId),
+  })
+);
+
 // ─── RELATIONS ────────────────────────────────────────────────────────────────
+
+export const weeklyAccountabilityCheckins = pgTable(
+  "weekly_accountability_checkins",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `wkc_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    weekStartDate: text("week_start_date").notNull(),
+    answers: jsonb("answers").$type<string[]>().default([]).notNull(),
+    aiReport: text("ai_report"),
+    sharedToCircle: boolean("shared_to_circle").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueUserWeek: uniqueIndex("weekly_checkins_user_week_idx").on(
+      table.userId,
+      table.weekStartDate
+    ),
+    userCreatedIdx: index("weekly_checkins_user_created_idx").on(table.userId, table.createdAt),
+  })
+);
+
+export const streakProtectionEvents = pgTable(
+  "streak_protection_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `spe_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    helperUserId: text("helper_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    eventType: text("event_type").notNull(),
+    targetDate: text("target_date"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userTypeDateIdx: index("streak_events_user_type_date_idx").on(
+      table.userId,
+      table.eventType,
+      table.createdAt
+    ),
+    helperIdx: index("streak_events_helper_idx").on(table.helperUserId),
+  })
+);
+
+export const goalStories = pgTable(
+  "goal_stories",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `stry_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
+    text: text("text"),
+    mediaUrl: text("media_url"),
+    mediaType: text("media_type"),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+    isArchived: boolean("is_archived").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userExpiresIdx: index("goal_stories_user_expires_idx").on(table.userId, table.expiresAt),
+    goalIdx: index("goal_stories_goal_idx").on(table.goalId),
+  })
+);
+
+export const coachProfiles = pgTable(
+  "coach_profiles",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `coach_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    headline: text("headline"),
+    bio: text("bio"),
+    referralCode: text("referral_code").notNull(),
+    commissionRate: real("commission_rate").default(0.2).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueCoachUser: uniqueIndex("coach_profiles_user_idx").on(table.userId),
+    uniqueReferralCode: uniqueIndex("coach_profiles_referral_code_idx").on(
+      table.referralCode
+    ),
+  })
+);
+
+export const coachClientLinks = pgTable(
+  "coach_client_links",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `ccl_${nanoid(12)}`),
+    coachUserId: text("coach_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientUserId: text("client_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status").default("active").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueCoachClient: uniqueIndex("coach_client_links_unique_idx").on(
+      table.coachUserId,
+      table.clientUserId
+    ),
+    coachIdx: index("coach_client_links_coach_idx").on(table.coachUserId),
+    clientIdx: index("coach_client_links_client_idx").on(table.clientUserId),
+  })
+);
+
+export const coachReferralConversions = pgTable(
+  "coach_referral_conversions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `crf_${nanoid(12)}`),
+    coachUserId: text("coach_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientUserId: text("client_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    revenueCents: integer("revenue_cents").notNull(),
+    commissionCents: integer("commission_cents").notNull(),
+    convertedAt: timestamp("converted_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    coachIdx: index("coach_referrals_coach_idx").on(table.coachUserId),
+    clientIdx: index("coach_referrals_client_idx").on(table.clientUserId),
+  })
+);
+
+export const userSubscriptions = pgTable(
+  "user_subscriptions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `sub_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    plan: text("plan").default("free").notNull(),
+    status: text("status").default("active").notNull(),
+    priceCents: integer("price_cents").default(0).notNull(),
+    renewsAt: timestamp("renews_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueUser: uniqueIndex("user_subscriptions_user_idx").on(table.userId),
+    planIdx: index("user_subscriptions_plan_idx").on(table.plan),
+  })
+);
+
+export const teamWorkspaces = pgTable(
+  "team_workspaces",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `team_${nanoid(12)}`),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueSlug: uniqueIndex("team_workspaces_slug_idx").on(table.slug),
+    ownerIdx: index("team_workspaces_owner_idx").on(table.ownerUserId),
+  })
+);
+
+export const teamWorkspaceMembers = pgTable(
+  "team_workspace_members",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `tmem_${nanoid(12)}`),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teamWorkspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").default("member").notNull(),
+    joinedAt: timestamp("joined_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueMember: uniqueIndex("team_workspace_members_unique_idx").on(
+      table.teamId,
+      table.userId
+    ),
+    teamIdx: index("team_workspace_members_team_idx").on(table.teamId),
+    userIdx: index("team_workspace_members_user_idx").on(table.userId),
+  })
+);
+
+export const integrationConnections = pgTable(
+  "integration_connections",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `int_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    config: jsonb("config").$type<Record<string, unknown>>().default({}).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueUserProvider: uniqueIndex("integration_connections_unique_idx").on(
+      table.userId,
+      table.provider
+    ),
+    userIdx: index("integration_connections_user_idx").on(table.userId),
+  })
+);
+
+export const webhookSubscriptions = pgTable(
+  "webhook_subscriptions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `whk_${nanoid(12)}`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    teamId: text("team_id").references(() => teamWorkspaces.id, {
+      onDelete: "set null",
+    }),
+    endpointUrl: text("endpoint_url").notNull(),
+    secret: text("secret").notNull(),
+    events: jsonb("events").$type<string[]>().default([]).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("webhook_subscriptions_user_idx").on(table.userId),
+    teamIdx: index("webhook_subscriptions_team_idx").on(table.teamId),
+    activeIdx: index("webhook_subscriptions_active_idx").on(table.isActive),
+  })
+);
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
@@ -488,9 +1615,29 @@ export const usersRelations = relations(users, ({ many }) => ({
   circlePosts: many(circlePosts),
   moments: many(moments),
   sentInvitations: many(invitations, { relationName: "sender" }),
+  friendQrCodes: many(friendQrCodes),
+  friendActivityEvents: many(friendActivityEvents, { relationName: "friend_activity_actor" }),
   achievements: many(userAchievements),
   sentConnections: many(circleConnections, { relationName: "requester" }),
   receivedConnections: many(circleConnections, { relationName: "receiver" }),
+  notifications: many(notifications),
+  challengeParticipations: many(challengeParticipants),
+  createdChallenges: many(challenges, { relationName: "challenge_creator" }),
+  challengeProgressEntries: many(challengeProgressEntries),
+  wearableConnections: many(wearableConnections),
+  wearableDataPoints: many(wearableDataPoints),
+  visionBoardItems: many(goalVisionBoardItems),
+  groupGoalMilestones: many(groupGoalMilestones, { relationName: "group_milestone_triggerer" }),
+  // Group feature
+  createdGroups:       many(groups,              { relationName: "group_creator" }),
+  groupMemberships:    many(groupMembers,         { relationName: "group_member_user" }),
+  sentGroupInvites:    many(groupInvites,         { relationName: "group_invite_sender" }),
+  receivedGroupInvites:many(groupInvites,         { relationName: "group_invite_recipient" }),
+  groupJoinRequests:   many(groupJoinRequests,    { relationName: "group_join_requester" }),
+  reviewedJoinRequests:many(groupJoinRequests,    { relationName: "group_join_reviewer" }),
+  createdGroupGoals:   many(groupGoalItems,       { relationName: "group_goal_creator" }),
+  groupChatPosts:      many(groupChatPosts,       { relationName: "group_chat_author" }),
+  groupEngagementLogs: many(groupEngagementLogs,  { relationName: "group_engagement_user" }),
 }));
 
 export const goalsRelations = relations(goals, ({ one, many }) => ({
@@ -500,6 +1647,8 @@ export const goalsRelations = relations(goals, ({ one, many }) => ({
   moments: many(moments),
   circlePosts: many(circlePosts),
   sharedWith: many(sharedGoals),
+  friendActivityEvents: many(friendActivityEvents),
+  visionBoardItems: many(goalVisionBoardItems),
 }));
 
 export const goalTasksRelations = relations(goalTasks, ({ one }) => ({
@@ -546,6 +1695,25 @@ export const invitationsRelations = relations(invitations, ({ one }) => ({
   }),
 }));
 
+export const friendQrCodesRelations = relations(friendQrCodes, ({ one }) => ({
+  user: one(users, { fields: [friendQrCodes.userId], references: [users.id] }),
+}));
+
+export const friendActivityEventsRelations = relations(
+  friendActivityEvents,
+  ({ one }) => ({
+    actor: one(users, {
+      fields: [friendActivityEvents.actorUserId],
+      references: [users.id],
+      relationName: "friend_activity_actor",
+    }),
+    goal: one(goals, {
+      fields: [friendActivityEvents.goalId],
+      references: [goals.id],
+    }),
+  })
+);
+
 export const circleConnectionsRelations = relations(
   circleConnections,
   ({ one }) => ({
@@ -572,7 +1740,182 @@ export const userAchievementsRelations = relations(
   })
 );
 
+export const aiInsightsRelations = relations(aiInsights, ({ one }) => ({
+  user: one(users, { fields: [aiInsights.userId], references: [users.id] }),
+  goal: one(goals, { fields: [aiInsights.goalId], references: [goals.id] }),
+}));
+
+export const goalTemplatesRelations = relations(goalTemplates, ({ one }) => ({
+  createdBy: one(users, {
+    fields: [goalTemplates.createdByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const groupGoalsRelations = relations(groupGoals, ({ one, many }) => ({
+  creator: one(users, { fields: [groupGoals.creatorId], references: [users.id] }),
+  members: many(groupGoalMembers),
+  joinRequests: many(groupGoalJoinRequests),
+  messages: many(groupGoalMessages),
+}));
+
+export const groupGoalMembersRelations = relations(groupGoalMembers, ({ one }) => ({
+  groupGoal: one(groupGoals, { fields: [groupGoalMembers.groupGoalId], references: [groupGoals.id] }),
+  user: one(users, { fields: [groupGoalMembers.userId], references: [users.id] }),
+}));
+
+export const groupGoalJoinRequestsRelations = relations(groupGoalJoinRequests, ({ one }) => ({
+  groupGoal: one(groupGoals, {
+    fields: [groupGoalJoinRequests.groupGoalId],
+    references: [groupGoals.id],
+  }),
+  requester: one(users, {
+    fields: [groupGoalJoinRequests.requesterId],
+    references: [users.id],
+    relationName: "group_goal_join_request_requester",
+  }),
+  reviewedBy: one(users, {
+    fields: [groupGoalJoinRequests.reviewedByUserId],
+    references: [users.id],
+    relationName: "group_goal_join_request_reviewer",
+  }),
+}));
+
+export const groupGoalMessagesRelations = relations(groupGoalMessages, ({ one }) => ({
+  groupGoal: one(groupGoals, { fields: [groupGoalMessages.groupGoalId], references: [groupGoals.id] }),
+  user: one(users, { fields: [groupGoalMessages.userId], references: [users.id] }),
+}));
+
+export const groupGoalMilestonesRelations = relations(groupGoalMilestones, ({ one }) => ({
+  groupGoal: one(groupGoals, {
+    fields: [groupGoalMilestones.groupGoalId],
+    references: [groupGoals.id],
+  }),
+  triggeredBy: one(users, {
+    fields: [groupGoalMilestones.triggeredByUserId],
+    references: [users.id],
+    relationName: "group_milestone_triggerer",
+  }),
+}));
+
+export const challengesRelations = relations(challenges, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [challenges.creatorId],
+    references: [users.id],
+    relationName: "challenge_creator",
+  }),
+  participants: many(challengeParticipants),
+  progressEntries: many(challengeProgressEntries),
+}));
+
+export const challengeParticipantsRelations = relations(
+  challengeParticipants,
+  ({ one }) => ({
+    challenge: one(challenges, {
+      fields: [challengeParticipants.challengeId],
+      references: [challenges.id],
+    }),
+    user: one(users, {
+      fields: [challengeParticipants.userId],
+      references: [users.id],
+    }),
+  })
+);
+
+export const challengeProgressEntriesRelations = relations(
+  challengeProgressEntries,
+  ({ one }) => ({
+    challenge: one(challenges, {
+      fields: [challengeProgressEntries.challengeId],
+      references: [challenges.id],
+    }),
+    user: one(users, {
+      fields: [challengeProgressEntries.userId],
+      references: [users.id],
+    }),
+  })
+);
+
+export const wearableConnectionsRelations = relations(wearableConnections, ({ one }) => ({
+  user: one(users, {
+    fields: [wearableConnections.userId],
+    references: [users.id],
+  }),
+}));
+
+export const wearableDataPointsRelations = relations(wearableDataPoints, ({ one }) => ({
+  user: one(users, {
+    fields: [wearableDataPoints.userId],
+    references: [users.id],
+  }),
+}));
+
+export const goalVisionBoardItemsRelations = relations(goalVisionBoardItems, ({ one }) => ({
+  goal: one(goals, {
+    fields: [goalVisionBoardItems.goalId],
+    references: [goals.id],
+  }),
+  user: one(users, {
+    fields: [goalVisionBoardItems.userId],
+    references: [users.id],
+  }),
+}));
+
+export const commentsRelations = relations(comments, ({ one, many }) => ({
+  post: one(circlePosts, { fields: [comments.postId], references: [circlePosts.id] }),
+  author: one(users, { fields: [comments.userId], references: [users.id] }),
+  parent: one(comments, { fields: [comments.parentCommentId], references: [comments.id], relationName: "parent" }),
+  replies: many(comments, { relationName: "parent" }),
+}));
+
 // ─── TYPE EXPORTS ─────────────────────────────────────────────────────────────
+
+// ─── GROUP FEATURE RELATIONS ──────────────────────────────────────────────────
+
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  creator:       one(users,           { fields: [groups.createdBy],    references: [users.id], relationName: "group_creator" }),
+  members:       many(groupMembers),
+  invites:       many(groupInvites),
+  joinRequests:  many(groupJoinRequests),
+  goalItems:     many(groupGoalItems),
+  chatPosts:     many(groupChatPosts),
+  engagementLogs:many(groupEngagementLogs),
+}));
+
+export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
+  group:     one(groups, { fields: [groupMembers.groupId],   references: [groups.id] }),
+  user:      one(users,  { fields: [groupMembers.userId],    references: [users.id],    relationName: "group_member_user" }),
+  inviter:   one(users,  { fields: [groupMembers.invitedBy], references: [users.id],    relationName: "group_member_inviter" }),
+}));
+
+export const groupInvitesRelations = relations(groupInvites, ({ one }) => ({
+  group:        one(groups, { fields: [groupInvites.groupId],        references: [groups.id] }),
+  sender:       one(users,  { fields: [groupInvites.invitedBy],      references: [users.id], relationName: "group_invite_sender" }),
+  inviteeUser:  one(users,  { fields: [groupInvites.inviteeUserId],  references: [users.id], relationName: "group_invite_recipient" }),
+}));
+
+export const groupJoinRequestsRelations = relations(groupJoinRequests, ({ one }) => ({
+  group:    one(groups, { fields: [groupJoinRequests.groupId],     references: [groups.id] }),
+  requester:one(users,  { fields: [groupJoinRequests.requesterId], references: [users.id], relationName: "group_join_requester" }),
+  reviewer: one(users,  { fields: [groupJoinRequests.reviewedBy],  references: [users.id], relationName: "group_join_reviewer" }),
+}));
+
+export const groupGoalItemsRelations = relations(groupGoalItems, ({ one }) => ({
+  group:   one(groups, { fields: [groupGoalItems.groupId],   references: [groups.id] }),
+  creator: one(users,  { fields: [groupGoalItems.createdBy], references: [users.id], relationName: "group_goal_creator" }),
+}));
+
+export const groupChatPostsRelations = relations(groupChatPosts, ({ one }) => ({
+  group:  one(groups, { fields: [groupChatPosts.groupId],  references: [groups.id] }),
+  author: one(users,  { fields: [groupChatPosts.authorId], references: [users.id], relationName: "group_chat_author" }),
+}));
+
+export const groupEngagementLogsRelations = relations(groupEngagementLogs, ({ one }) => ({
+  user:  one(users,  { fields: [groupEngagementLogs.userId],  references: [users.id],  relationName: "group_engagement_user" }),
+  group: one(groups, { fields: [groupEngagementLogs.groupId], references: [groups.id] }),
+}));
+
+// ─── TYPES ────────────────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -592,5 +1935,64 @@ export type PostReaction = typeof postReactions.$inferSelect;
 export type PostReply = typeof postReplies.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
+export type FriendQrCode = typeof friendQrCodes.$inferSelect;
+export type NewFriendQrCode = typeof friendQrCodes.$inferInsert;
+export type FriendActivityEvent = typeof friendActivityEvents.$inferSelect;
+export type NewFriendActivityEvent = typeof friendActivityEvents.$inferInsert;
 export type UserAchievement = typeof userAchievements.$inferSelect;
 export type CircleConnection = typeof circleConnections.$inferSelect;
+export type GoalTemplate = typeof goalTemplates.$inferSelect;
+export type NewGoalTemplate = typeof goalTemplates.$inferInsert;
+export type AiInsight = typeof aiInsights.$inferSelect;
+export type NewAiInsight = typeof aiInsights.$inferInsert;
+export type GroupGoal = typeof groupGoals.$inferSelect;
+export type NewGroupGoal = typeof groupGoals.$inferInsert;
+export type GroupGoalMember = typeof groupGoalMembers.$inferSelect;
+export type GroupGoalJoinRequest = typeof groupGoalJoinRequests.$inferSelect;
+export type GroupGoalMessage = typeof groupGoalMessages.$inferSelect;
+export type GroupGoalMilestone = typeof groupGoalMilestones.$inferSelect;
+export type Challenge = typeof challenges.$inferSelect;
+export type NewChallenge = typeof challenges.$inferInsert;
+export type ChallengeParticipant = typeof challengeParticipants.$inferSelect;
+export type NewChallengeParticipant = typeof challengeParticipants.$inferInsert;
+export type ChallengeProgressEntry = typeof challengeProgressEntries.$inferSelect;
+export type NewChallengeProgressEntry = typeof challengeProgressEntries.$inferInsert;
+export type WearableConnection = typeof wearableConnections.$inferSelect;
+export type NewWearableConnection = typeof wearableConnections.$inferInsert;
+export type WearableDataPoint = typeof wearableDataPoints.$inferSelect;
+export type NewWearableDataPoint = typeof wearableDataPoints.$inferInsert;
+export type GoalVisionBoardItem = typeof goalVisionBoardItems.$inferSelect;
+export type NewGoalVisionBoardItem = typeof goalVisionBoardItems.$inferInsert;
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+export type Comment = typeof comments.$inferSelect;
+export type NewComment = typeof comments.$inferInsert;
+export type WeeklyAccountabilityCheckin = typeof weeklyAccountabilityCheckins.$inferSelect;
+export type NewWeeklyAccountabilityCheckin = typeof weeklyAccountabilityCheckins.$inferInsert;
+export type StreakProtectionEvent = typeof streakProtectionEvents.$inferSelect;
+export type NewStreakProtectionEvent = typeof streakProtectionEvents.$inferInsert;
+export type GoalStory = typeof goalStories.$inferSelect;
+export type NewGoalStory = typeof goalStories.$inferInsert;
+export type CoachProfile = typeof coachProfiles.$inferSelect;
+export type CoachClientLink = typeof coachClientLinks.$inferSelect;
+export type CoachReferralConversion = typeof coachReferralConversions.$inferSelect;
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type TeamWorkspace = typeof teamWorkspaces.$inferSelect;
+export type TeamWorkspaceMember = typeof teamWorkspaceMembers.$inferSelect;
+export type IntegrationConnection = typeof integrationConnections.$inferSelect;
+export type WebhookSubscription = typeof webhookSubscriptions.$inferSelect;
+// Group feature
+export type Group = typeof groups.$inferSelect;
+export type NewGroup = typeof groups.$inferInsert;
+export type GroupMember = typeof groupMembers.$inferSelect;
+export type NewGroupMember = typeof groupMembers.$inferInsert;
+export type GroupInvite = typeof groupInvites.$inferSelect;
+export type NewGroupInvite = typeof groupInvites.$inferInsert;
+export type GroupJoinRequest = typeof groupJoinRequests.$inferSelect;
+export type NewGroupJoinRequest = typeof groupJoinRequests.$inferInsert;
+export type GroupGoalItem = typeof groupGoalItems.$inferSelect;
+export type NewGroupGoalItem = typeof groupGoalItems.$inferInsert;
+export type GroupChatPost = typeof groupChatPosts.$inferSelect;
+export type NewGroupChatPost = typeof groupChatPosts.$inferInsert;
+export type GroupEngagementLog = typeof groupEngagementLogs.$inferSelect;
+export type NewGroupEngagementLog = typeof groupEngagementLogs.$inferInsert;

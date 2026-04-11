@@ -26,6 +26,11 @@ export async function GET(): Promise<NextResponse> {
       location: users.location,
       bio: users.bio,
       darkMode: users.darkMode,
+      timezone: users.timezone,
+      pushNotificationsEnabled: users.pushNotificationsEnabled,
+      xpPoints: users.xpPoints,
+      level: users.level,
+      northStarScore: users.northStarScore,
       momentumScore: users.momentumScore,
       currentStreak: users.currentStreak,
       longestStreak: users.longestStreak,
@@ -60,7 +65,8 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const { name, age, location, bio, darkMode } = validated.data;
+    const { name, age, location, bio, darkMode, timezone, pushNotificationsEnabled } =
+      validated.data;
 
     const [updated] = await db
       .update(users)
@@ -70,6 +76,8 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         ...(location !== undefined && { location }),
         ...(bio !== undefined && { bio }),
         ...(darkMode !== undefined && { darkMode }),
+        ...(timezone !== undefined && { timezone }),
+        ...(pushNotificationsEnabled !== undefined && { pushNotificationsEnabled }),
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId))
@@ -82,6 +90,8 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         location: users.location,
         bio: users.bio,
         darkMode: users.darkMode,
+        timezone: users.timezone,
+        pushNotificationsEnabled: users.pushNotificationsEnabled,
       });
 
     return NextResponse.json({ user: updated });

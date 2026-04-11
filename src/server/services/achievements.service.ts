@@ -4,6 +4,7 @@
 import { db } from "@/lib/db";
 import { userAchievements } from "@/drizzle/schema";
 import { eq, and } from "drizzle-orm";
+import { integrationsService } from "./integrations.service";
 
 export interface Achievement {
   key: string;
@@ -120,6 +121,13 @@ export const achievementService = {
     if (existing) return false;
 
     await db.insert(userAchievements).values({ userId, achievementKey: key });
+    void integrationsService
+      .emitEvent({
+        userIds: [userId],
+        event: "achievement.earned",
+        payload: { achievementKey: key },
+      })
+      .catch(() => null);
     return true;
   },
 

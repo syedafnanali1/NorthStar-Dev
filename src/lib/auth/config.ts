@@ -10,7 +10,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { users, accounts, sessions, verificationTokens } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { loginSchema } from "@/lib/validators/auth";
 import {
   isFacebookOAuthConfigured,
@@ -36,16 +36,22 @@ if (!facebookConfigured) {
 
 const providers = [
   Credentials({
+    name: "Email",
+    credentials: {
+      email: { label: "Email", type: "email", placeholder: "you@example.com" },
+      password: { label: "Password", type: "password" },
+    },
     async authorize(credentials) {
       const validated = loginSchema.safeParse(credentials);
       if (!validated.success) return null;
 
       const { email, password } = validated.data;
+      const normalizedEmail = email.trim().toLowerCase();
 
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.email, email))
+        .where(sql`lower(${users.email}) = ${normalizedEmail}`)
         .limit(1);
 
       if (!user || !user.passwordHash) return null;

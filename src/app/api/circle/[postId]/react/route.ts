@@ -3,11 +3,19 @@ import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { db } from "@/lib/db";
 import { postReactions, circlePosts } from "@/drizzle/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { notificationsService } from "@/server/services/notifications.service";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import type { NextRequest } from "next/server";
 
 const schema = z.object({ emoji: z.string().min(1).max(8) });
+const NORTH_STAR_REACTIONS = new Set(["🔥", "💪", "✨", "🌟", "⭐", "💙", "👏", "🎯"]);
+
+function normalizeReaction(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.toLowerCase() === "kudos") return "👏";
+  return trimmed;
+}
 
 interface RouteParams {
   params: Promise<{ postId: string }>;
@@ -22,7 +30,13 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
   const validated = schema.safeParse(body);
   if (!validated.success) return NextResponse.json({ error: "Invalid emoji" }, { status: 422 });
 
-  const { emoji } = validated.data;
+  const emoji = normalizeReaction(validated.data.emoji);
+  if (!NORTH_STAR_REACTIONS.has(emoji)) {
+    return NextResponse.json(
+      { error: "Invalid reaction", allowed: Array.from(NORTH_STAR_REACTIONS) },
+      { status: 422 }
+    );
+  }
 
   try {
     // Toggle reaction
@@ -53,6 +67,24 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
       .update(circlePosts)
       .set({ reactionCounts: counts })
       .where(eq(circlePosts.id, postId));
+
+    if (!existing) {
+      const [post] = await db
+        .select({ userId: circlePosts.userId })
+        .from(circlePosts)
+        .where(eq(circlePosts.id, postId))
+        .limit(1);
+
+      if (post && post.userId !== userId) {
+        await notificationsService.createNotification(
+          post.userId,
+          "reaction",
+          "New reaction on your post",
+          `${emoji} on your update`,
+          "/circle"
+        );
+      }
+    }
 
     return NextResponse.json({ counts });
   } catch (err) {

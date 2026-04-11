@@ -48,6 +48,11 @@ export const createGoalSchema = z.object({
       z.object({
         text: z.string().min(1).max(200),
         isRepeating: z.boolean().default(true),
+        incrementValue: z.coerce
+          .number()
+          .positive("Task increment must be positive")
+          .max(1_000_000, "Task increment is too large")
+          .optional(),
       })
     )
     .max(10, "Maximum 10 daily tasks")

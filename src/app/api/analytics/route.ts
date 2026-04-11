@@ -17,11 +17,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const range = parseInt(searchParams.get("range") ?? "30", 10);
 
   try {
-    const [momentum, categories, lifetime, achievements] = await Promise.all([
+    const [momentum, categories, lifetime, achievements, behavior] = await Promise.all([
       analyticsService.getMomentumData(userId, range),
       analyticsService.getCategoryBreakdown(userId),
       analyticsService.getLifetimeStats(userId),
       achievementService.getAllWithStatus(userId),
+      analyticsService.getBehaviorIntelligence(userId, Math.max(28, range)),
     ]);
 
     return NextResponse.json({
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       categories,
       lifetime,
       achievements,
+      behavior,
     });
   } catch (err) {
     console.error("[GET /api/analytics]", err);

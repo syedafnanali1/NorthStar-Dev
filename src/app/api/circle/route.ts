@@ -11,8 +11,11 @@ import {
   circleConnections,
   goals,
 } from "@/drizzle/schema";
-import { eq, and, or, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { xpService } from "@/server/services/xp.service";
+import { friendActivityService } from "@/server/services/friend-activity.service";
+import { mentionsService } from "@/server/services/mentions.service";
 import type { NextRequest } from "next/server";
 
 const createPostSchema = z.object({
@@ -32,6 +35,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     let posts;
+
+    if (feed === "activity") {
+      const events = await friendActivityService.getFeedForUser(userId, 40);
+      return NextResponse.json({ events });
+    }
 
     if (feed === "community") {
       // Community feed: all public posts
@@ -137,6 +145,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       })
       .returning();
 
+    void mentionsService.notifyMentionedUsers({
+      actorUserId: userId,
+      text: validated.data.text,
+      link: "/circle",
+      contextLabel: "a post",
+    });
+
+    void xpService.awardXP(userId, "post_checkin");
     return NextResponse.json({ post }, { status: 201 });
   } catch (err) {
     console.error("[POST /api/circle]", err);

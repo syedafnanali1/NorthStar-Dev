@@ -44,6 +44,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ goal }, { status: 201 });
   } catch (err) {
     console.error("[POST /api/goals]", err);
-    return NextResponse.json({ error: "Failed to create goal" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Failed to create goal";
+    const status = /free plan supports up to/i.test(message) ? 403 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

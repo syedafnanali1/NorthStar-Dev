@@ -32,6 +32,8 @@ export const updateProfileSchema = z.object({
   location: z.string().max(100, "Location must be under 100 characters").optional().nullable(),
   bio: z.string().max(500, "Bio must be under 500 characters").optional().nullable(),
   darkMode: z.boolean().optional(),
+  timezone: z.string().max(80, "Timezone must be under 80 characters").optional(),
+  pushNotificationsEnabled: z.boolean().optional(),
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

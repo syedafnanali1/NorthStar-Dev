@@ -28,6 +28,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {
     console.error("[POST /api/invitations]", err);
-    return NextResponse.json({ error: "Failed to send invitation" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Failed to send invitation";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
