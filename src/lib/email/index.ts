@@ -4,10 +4,22 @@
 
 import { Resend } from "resend";
 
-const resend = new Resend(process.env["RESEND_API_KEY"]);
+const RESEND_API_KEY = process.env["RESEND_API_KEY"];
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 const FROM = process.env["EMAIL_FROM"] ?? "North Star <hello@northstar.app>";
 const APP_NAME = process.env["NEXT_PUBLIC_APP_NAME"] ?? "North Star";
 const APP_URL = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
+
+function ensureResend() {
+  if (!resend) {
+    throw new Error(
+      "RESEND_API_KEY environment variable is not set. " +
+        "Set RESEND_API_KEY in Vercel environment variables to send email."
+    );
+  }
+
+  return resend;
+}
 
 interface InvitationEmailParams {
   to: string;
@@ -105,7 +117,7 @@ export const emailService = {
       <p style="font-size:12px;color:#8C857D;margin:24px 0 0;">This link expires in 7 days.</p>
     `;
 
-    await resend.emails.send({
+    await ensureResend().emails.send({
       from: FROM,
       to,
       subject: `${senderName} invited you to North Star`,
@@ -127,7 +139,7 @@ export const emailService = {
       </p>
     `;
 
-    await resend.emails.send({
+    await ensureResend().emails.send({
       from: FROM,
       to,
       subject: `Reset your ${APP_NAME} password`,
@@ -173,7 +185,7 @@ export const emailService = {
       </a>
     `;
 
-    await resend.emails.send({
+    await ensureResend().emails.send({
       from: FROM,
       to,
       subject: `Welcome to ${APP_NAME} ⭐`,
@@ -221,7 +233,7 @@ export const emailService = {
       </a>
     `;
 
-    await resend.emails.send({
+    await ensureResend().emails.send({
       from: FROM,
       to,
       subject: `${APP_NAME} weekly digest`,
@@ -247,7 +259,7 @@ export const emailService = {
       </a>
     `;
 
-    await resend.emails.send({
+    await ensureResend().emails.send({
       from: FROM,
       to,
       subject: `New join request for ${groupTitle}`,
@@ -269,7 +281,7 @@ export const emailService = {
       </p>
     `;
 
-    await resend.emails.send({
+    await ensureResend().emails.send({
       from: FROM,
       to,
       subject: `${inviterName} invited you to join "${groupTitle}"`,

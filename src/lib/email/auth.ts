@@ -1,9 +1,21 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env["RESEND_API_KEY"]);
+const RESEND_API_KEY = process.env["RESEND_API_KEY"];
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 const APP_NAME = process.env["NEXT_PUBLIC_APP_NAME"] ?? "NorthStar";
 const APP_URL = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
 const FROM = process.env["EMAIL_FROM"] ?? "North Star <hello@northstar.app>";
+
+function ensureResend() {
+  if (!resend) {
+    throw new Error(
+      "RESEND_API_KEY environment variable is not set. " +
+        "Set RESEND_API_KEY in Vercel environment variables to send email."
+    );
+  }
+
+  return resend;
+}
 
 interface EmailPayload {
   to: string;
@@ -34,7 +46,7 @@ async function sendWithRetry(payload: EmailPayload): Promise<void> {
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      await resend.emails.send({
+      await ensureResend().emails.send({
         from: FROM,
         to: payload.to,
         subject: payload.subject,
