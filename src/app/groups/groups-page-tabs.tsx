@@ -48,9 +48,19 @@ const CATEGORIES = [
   { value: "other",      label: "Other",       emoji: "✨" },
 ] as const;
 
-// ─── Popularity badge (for All tab cards) ─────────────────────────────────────
+// ─── Category → accent color (mirrors group-card.tsx) ────────────────────────
 
-// ─── Discover card (All tab) — same look as GroupCard + Request to Join button ──
+const CATEGORY_COLORS: Record<string, string> = {
+  health: "#4caf82", fitness: "#e07d3a", finance: "#3a7fe0",
+  mindset: "#8b5cf6", writing: "#d97706", reading: "#92644a",
+  career: "#0891b2", lifestyle: "#db2777", creativity: "#7c3aed",
+  community: "#059669", other: "#C4963A",
+};
+function accentFor(cat: string | null | undefined) {
+  return cat ? (CATEGORY_COLORS[cat] ?? "#C4963A") : "#C4963A";
+}
+
+// ─── Discover card (All tab) — same visual as GroupCard, "Request to Join" footer ─
 
 function AllGroupCard({
   group,
@@ -62,67 +72,92 @@ function AllGroupCard({
   joiningId: string | null;
 }) {
   const category = "category" in group && group.category ? (group.category as string) : null;
+  const accent = accentFor(category);
   const owner = group.members.find((m) => m.role === "owner") ?? group.members[0];
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper shadow-[0_2px_8px_rgba(26,23,20,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card-hover">
-      {/* Cover area */}
-      <div className="relative flex h-28 w-full items-center justify-center bg-[#eae8e3]">
-        {group.coverImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={group.coverImage} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cream-paper/70 text-3xl shadow-sm">
-            ⭐
-          </div>
-        )}
+    <div className="group/card relative flex flex-col overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+      {/* Gradient header */}
+      <div
+        className="relative h-24 w-full overflow-hidden"
+        style={{
+          background: `linear-gradient(135deg, ${accent}22 0%, ${accent}44 100%)`,
+          borderBottom: `1px solid ${accent}33`,
+        }}
+      >
+        <div className="absolute inset-x-0 top-0 h-0.5" style={{ background: accent }} />
+        <div className="absolute left-4 top-1/2 -translate-y-1/2">
+          {group.coverImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={group.coverImage} alt="" className="h-14 w-14 rounded-2xl object-cover shadow-sm" />
+          ) : (
+            <div
+              className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl shadow-sm"
+              style={{ background: `${accent}22`, border: `1.5px solid ${accent}44` }}
+            >
+              ⭐
+            </div>
+          )}
+        </div>
+        <div className="absolute right-3 top-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-cream-paper/90 px-2 py-0.5 text-[10px] font-medium text-ink-muted backdrop-blur-sm">
+            <Globe className="h-2.5 w-2.5" /> Public
+          </span>
+        </div>
       </div>
 
       {/* Body */}
-      <div className="flex flex-1 flex-col gap-1.5 px-4 pt-3 pb-2">
-        {category && (
-          <p className="text-[0.62rem] font-bold uppercase tracking-widest text-ink-muted">{category}</p>
-        )}
-        <h3 className="font-serif text-base font-bold leading-snug text-ink line-clamp-1">{group.name}</h3>
+      <div className="flex flex-1 flex-col p-4">
+        {category && <p className="section-label mb-1">{category}</p>}
+        <p className="font-serif text-[1.0625rem] font-semibold leading-snug text-ink line-clamp-1">
+          {group.name}
+        </p>
         {group.description && (
-          <p className="line-clamp-2 text-xs leading-relaxed text-ink-muted">{group.description}</p>
+          <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-ink-muted">{group.description}</p>
         )}
         {owner && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
+          <div className="mt-2.5 flex items-center gap-1.5">
             <Crown className="h-3 w-3 text-gold" />
-            <span>by <span className="font-medium text-ink">{owner.name ?? owner.username ?? "Someone"}</span></span>
-          </p>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between border-t border-cream-dark px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <div className="flex -space-x-1.5">
-            {group.members.slice(0, 3).map((m) => {
-              const inits = m.name ? m.name.split(" ").map((p: string) => p[0]?.toUpperCase() ?? "").join("").slice(0, 2) : "?";
-              return m.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={m.id} src={m.image} alt={m.name ?? ""} className="h-7 w-7 rounded-full object-cover ring-2 ring-cream-paper" />
-              ) : (
-                <div key={m.id} className="flex h-7 w-7 items-center justify-center rounded-full bg-gold/25 text-[0.6rem] font-bold text-gold ring-2 ring-cream-paper">{inits}</div>
-              );
-            })}
+            <span className="text-xs text-ink-muted">
+              by <span className="font-medium text-ink">{owner.name ?? owner.username ?? "Creator"}</span>
+            </span>
           </div>
-          <span className="flex items-center gap-1 text-xs text-ink-muted">
-            <Users className="h-3 w-3" />
-            {group.memberCount}
-          </span>
+        )}
+        <div className="flex-1" />
+        {/* Footer */}
+        <div className="mt-3 flex items-center justify-between border-t border-cream-dark pt-3">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center">
+              {group.members.slice(0, 4).map((m, i) => {
+                const inits = m.name ? m.name.split(" ").map((p: string) => p[0]?.toUpperCase() ?? "").join("").slice(0, 2) : "?";
+                return (
+                  <div
+                    key={m.id}
+                    className="relative inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-cream-paper bg-gold text-[9px] font-bold text-ink"
+                    style={{ marginLeft: i === 0 ? 0 : -6, zIndex: 4 - i }}
+                  >
+                    {m.image
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={m.image} alt={m.name ?? ""} className="h-full w-full object-cover" />
+                      : inits}
+                  </div>
+                );
+              })}
+            </div>
+            <span className="flex items-center gap-1 text-xs text-ink-muted">
+              <Users className="h-3 w-3" /> {group.memberCount}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onRequestJoin(group.id)}
+            disabled={joiningId === group.id}
+            className="inline-flex items-center gap-1 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-cream-paper transition hover:opacity-90 disabled:opacity-50"
+          >
+            <LogIn className="h-3 w-3" />
+            {joiningId === group.id ? "Sending…" : "Request to Join"}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => onRequestJoin(group.id)}
-          disabled={joiningId === group.id}
-          className="flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-cream-paper transition hover:opacity-90 disabled:opacity-50"
-        >
-          <LogIn className="h-3 w-3" />
-          {joiningId === group.id ? "Sending…" : "Request to Join"}
-        </button>
       </div>
     </div>
   );

@@ -1,11 +1,11 @@
 "use client";
 
 // src/components/group-goals/group-card.tsx
-// Card for the new community Group model (groups table).
-// Matches the GroupGoalCard visual style: cover area, category, name, description, creator, footer.
+// Community Group card — same visual structure as GroupGoalCard.
 
 import Link from "next/link";
-import { Crown, Users } from "lucide-react";
+import { Crown, Users, Globe, Lock } from "lucide-react";
+import { cn } from "@/lib/utils/index";
 import type { GroupWithMeta } from "@/server/services/groups.service";
 
 interface GroupCardProps {
@@ -13,19 +13,62 @@ interface GroupCardProps {
   currentUserId: string;
 }
 
-function MemberAvatar({ name, image }: { name: string | null; image: string | null }) {
-  const inits = name
-    ? name.split(" ").slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("")
-    : "?";
-  if (image) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={image} alt={name ?? ""} className="h-7 w-7 rounded-full object-cover ring-2 ring-cream-paper" />
-    );
-  }
+// Map the group category enum to an accent color
+const CATEGORY_COLORS: Record<string, string> = {
+  health:     "#4caf82",
+  fitness:    "#e07d3a",
+  finance:    "#3a7fe0",
+  mindset:    "#8b5cf6",
+  writing:    "#d97706",
+  reading:    "#92644a",
+  career:     "#0891b2",
+  lifestyle:  "#db2777",
+  creativity: "#7c3aed",
+  community:  "#059669",
+  other:      "#C4963A",
+};
+
+function accentFor(category: string | null | undefined): string {
+  return category ? (CATEGORY_COLORS[category] ?? "#C4963A") : "#C4963A";
+}
+
+function MemberAvatarStack({
+  members,
+}: {
+  members: GroupWithMeta["members"];
+}) {
+  const visible = members.slice(0, 4);
+  const overflow = members.length - 4;
   return (
-    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gold/25 text-[0.6rem] font-bold text-gold ring-2 ring-cream-paper">
-      {inits}
+    <div className="flex items-center">
+      {visible.map((m, i) => {
+        const inits = m.name
+          ? m.name.split(" ").map((p) => p[0]?.toUpperCase() ?? "").join("").slice(0, 2)
+          : "?";
+        return (
+          <div
+            key={m.id}
+            className="relative inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-cream-paper bg-gold text-[9px] font-bold text-ink"
+            style={{ marginLeft: i === 0 ? 0 : -6, zIndex: visible.length - i }}
+            title={m.name ?? "Member"}
+          >
+            {m.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={m.image} alt={m.name ?? ""} className="h-full w-full object-cover" />
+            ) : (
+              inits
+            )}
+          </div>
+        );
+      })}
+      {overflow > 0 && (
+        <div
+          className="relative inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-cream-paper bg-cream-dark text-[9px] font-semibold text-ink-muted"
+          style={{ marginLeft: -6 }}
+        >
+          +{overflow}
+        </div>
+      )}
     </div>
   );
 }
@@ -35,77 +78,121 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
     ? `/groups/community/${group.id}`
     : `/groups/${group.id}`;
 
-  const owner = group.members.find((m) => m.role === "owner") ?? group.members[0];
   const category = "category" in group && group.category ? (group.category as string) : null;
+  const accent = accentFor(category);
+  const owner = group.members.find((m) => m.role === "owner") ?? group.members[0];
+  const isPublic = group.type === "public";
 
   return (
-    <Link
-      href={href}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper shadow-[0_2px_8px_rgba(26,23,20,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card-hover"
-    >
-      {/* Cover area */}
-      <div className="relative flex h-28 w-full items-center justify-center bg-[#eae8e3]">
-        {group.coverImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={group.coverImage}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cream-paper/70 text-3xl shadow-sm">
-            ⭐
-          </div>
-        )}
+    <div className="group/card relative flex flex-col overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+
+      {/* Gradient header — mirrors GroupGoalCard */}
+      <div
+        className="relative h-24 w-full overflow-hidden"
+        style={{
+          background: `linear-gradient(135deg, ${accent}22 0%, ${accent}44 100%)`,
+          borderBottom: `1px solid ${accent}33`,
+        }}
+      >
+        {/* Accent stripe */}
+        <div className="absolute inset-x-0 top-0 h-0.5" style={{ background: accent }} />
+
+        {/* Emoji / cover image */}
+        <div className="absolute left-4 top-1/2 -translate-y-1/2">
+          {group.coverImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={group.coverImage}
+              alt=""
+              className="h-14 w-14 rounded-2xl object-cover shadow-sm"
+            />
+          ) : (
+            <div
+              className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl shadow-sm"
+              style={{ background: `${accent}22`, border: `1.5px solid ${accent}44` }}
+            >
+              ⭐
+            </div>
+          )}
+        </div>
+
+        {/* Top-right badge: visibility */}
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full bg-cream-paper/90 px-2 py-0.5 text-[10px] font-medium text-ink-muted backdrop-blur-sm"
+            )}
+          >
+            {isPublic ? <Globe className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
+            {isPublic ? "Public" : "Private"}
+          </span>
+        </div>
       </div>
 
       {/* Body */}
-      <div className="flex flex-1 flex-col gap-1.5 px-4 pt-3 pb-2">
+      <div className="flex flex-1 flex-col p-4">
         {/* Category */}
         {category && (
-          <p className="text-[0.62rem] font-bold uppercase tracking-widest text-ink-muted">
-            {category}
-          </p>
+          <p className="section-label mb-1">{category}</p>
         )}
 
         {/* Name */}
-        <h3 className="font-serif text-base font-bold leading-snug text-ink line-clamp-1">
+        <Link
+          href={href}
+          className="block font-serif text-[1.0625rem] font-semibold leading-snug text-ink transition-colors hover:text-gold"
+        >
           {group.name}
-        </h3>
+        </Link>
 
         {/* Description */}
         {group.description && (
-          <p className="line-clamp-2 text-xs leading-relaxed text-ink-muted">
+          <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-ink-muted">
             {group.description}
           </p>
         )}
 
-        {/* Creator row */}
+        {/* Creator */}
         {owner && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
+          <div className="mt-2.5 flex items-center gap-1.5">
             <Crown className="h-3 w-3 text-gold" />
-            <span>by <span className="font-medium text-ink">{owner.name ?? owner.username ?? "Someone"}</span></span>
-          </p>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between border-t border-cream-dark px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <div className="flex -space-x-1.5">
-            {group.members.slice(0, 3).map((m) => (
-              <MemberAvatar key={m.id} name={m.name} image={m.image} />
-            ))}
+            <span className="text-xs text-ink-muted">
+              by{" "}
+              {owner.username ? (
+                <Link
+                  href={`/profile/${owner.username}`}
+                  className="font-medium text-ink hover:text-gold hover:underline"
+                >
+                  {owner.name ?? `@${owner.username}`}
+                </Link>
+              ) : (
+                <span className="font-medium text-ink">{owner.name ?? "Creator"}</span>
+              )}
+            </span>
           </div>
-          <span className="flex items-center gap-1 text-xs text-ink-muted">
-            <Users className="h-3 w-3" />
-            {group.memberCount}
-          </span>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Footer */}
+        <div className="mt-3 flex items-center justify-between border-t border-cream-dark pt-3">
+          <div className="flex items-center gap-3">
+            {group.members.length > 0 && (
+              <MemberAvatarStack members={group.members} />
+            )}
+            <span className="flex items-center gap-1 text-xs text-ink-muted">
+              <Users className="h-3 w-3" />
+              {group.memberCount}
+            </span>
+          </div>
+
+          <Link
+            href={href}
+            className="inline-flex items-center gap-1 rounded-full bg-cream-dark px-3 py-1.5 text-xs font-semibold text-ink transition-all hover:bg-ink hover:text-cream-paper"
+          >
+            Open <span>→</span>
+          </Link>
         </div>
-        <span className="rounded-full border border-cream-dark px-3 py-1 text-xs font-semibold text-ink transition-colors group-hover:border-ink group-hover:bg-ink group-hover:text-cream-paper">
-          →
-        </span>
       </div>
-    </Link>
+    </div>
   );
 }
