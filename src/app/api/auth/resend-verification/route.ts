@@ -52,7 +52,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           success: false,
           code: "EMAIL_DELIVERY_UNAVAILABLE",
           message:
-            "Email verification is temporarily unavailable while email delivery is being configured. Use Google sign-in for now.",
+            "Email delivery requires a verified custom domain in Resend. Visit resend.com/domains to set one up, then update EMAIL_FROM. Until then, use Google sign-in.",
         },
         { status: 503 }
       );
@@ -134,7 +134,7 @@ export async function POST(request: Request): Promise<NextResponse> {
             ? "EMAIL_DELIVERY_UNAVAILABLE"
             : "EMAIL_SEND_FAILED",
           message: isResendTestingModeError(emailError)
-            ? "Email verification is temporarily unavailable while email delivery is being configured. Use Google sign-in for now."
+            ? "Email delivery requires a verified custom domain in Resend. Visit resend.com/domains to set one up, then update EMAIL_FROM. Until then, use Google sign-in."
             : "We couldn't send a verification email. Please check the address and try again.",
         },
         { status: isResendTestingModeError(emailError) ? 503 : 502 }

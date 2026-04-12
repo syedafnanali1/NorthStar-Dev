@@ -71,7 +71,13 @@ export function isEmailDeliveryConfigured(
   fromAddress: string | undefined
 ): boolean {
   if (!hasValue(apiKey) || !hasValue(fromAddress)) return false;
-  return !fromAddress!.toLowerCase().includes("@resend.dev");
+  // Reject obvious placeholder values
+  if (includesAny(apiKey!, ["re_test_", "your-resend-api-key", "example"])) return false;
+  // onboarding@resend.dev is Resend's test-only address — it can ONLY send to the
+  // Resend account owner's email. Real users will never receive these emails.
+  // A verified custom domain must be used for production email delivery.
+  if (includesAny(fromAddress!, ["onboarding@resend.dev"])) return false;
+  return true;
 }
 
 export function getAuthConfigStatus(
