@@ -1044,7 +1044,7 @@ export const groupsService = {
   async updateGroup(
     groupId: string,
     userId: string,
-    patch: { name?: string; description?: string; type?: "public" | "private" }
+    patch: { name?: string; description?: string; type?: "public" | "private"; icon?: string }
   ): Promise<void> {
     const [membership] = await db
       .select({ role: groupMembers.role })
@@ -1068,6 +1068,7 @@ export const groupsService = {
         ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
         ...(patch.description !== undefined ? { description: patch.description.trim() || null } : {}),
         ...(patch.type !== undefined ? { type: patch.type } : {}),
+        ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
         updatedAt: new Date(),
       })
       .where(eq(groups.id, groupId));

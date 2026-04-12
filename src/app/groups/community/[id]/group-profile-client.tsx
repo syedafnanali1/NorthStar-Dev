@@ -5,12 +5,14 @@
 //   - Request to Join button with pending state
 //   - Rate this group (members only)
 //   - Archive group (owner only)
+//   - Change group icon (owner only)
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogIn, Star, Archive } from "lucide-react";
+import { LogIn, Star, Archive, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils/index";
 import { toast } from "@/components/ui/toaster";
+import { GroupIconPicker, GroupIconDisplay } from "@/components/group-goals/group-icon-picker";
 
 interface GroupProfileClientProps {
   groupId: string;
@@ -18,6 +20,7 @@ interface GroupProfileClientProps {
   myJoinRequestStatus: "pending" | "approved" | "rejected" | null;
   groupType: "public" | "private";
   myRecommendationRating: number | null;
+  currentIcon?: string | null;
 }
 
 export function GroupProfileClient({
@@ -26,12 +29,15 @@ export function GroupProfileClient({
   myJoinRequestStatus,
   groupType,
   myRecommendationRating,
+  currentIcon,
 }: GroupProfileClientProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [hoverRating, setHoverRating] = useState(0);
   const [savedRating, setSavedRating] = useState(myRecommendationRating);
   const [ratingBusy, setRatingBusy] = useState(false);
+  const [icon, setIcon] = useState<string | null | undefined>(currentIcon);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   async function handleRequestJoin() {
     setBusy(true);
@@ -129,6 +135,17 @@ export function GroupProfileClient({
   const displayRating = hoverRating || savedRating || 0;
 
   return (
+    <>
+    {/* Icon picker modal */}
+    {pickerOpen && (
+      <GroupIconPicker
+        groupId={groupId}
+        currentIcon={icon}
+        onClose={() => setPickerOpen(false)}
+        onSaved={(newIcon) => { setIcon(newIcon); router.refresh(); }}
+      />
+    )}
+
     <div className="flex flex-wrap items-start gap-4">
       {/* Star rating */}
       <div>
@@ -165,18 +182,33 @@ export function GroupProfileClient({
         </div>
       </div>
 
-      {/* Archive (owner only) */}
+      {/* Owner controls */}
       {myRole === "owner" && (
-        <button
-          type="button"
-          onClick={() => void handleArchive()}
-          disabled={busy}
-          className="flex items-center gap-2 self-end rounded-full border border-cream-dark px-4 py-2 text-sm text-ink-muted transition hover:border-rose-300 hover:text-rose-600 disabled:opacity-40"
-        >
-          <Archive className="h-4 w-4" />
-          Archive Group
-        </button>
+        <div className="flex items-center gap-2 self-end">
+          {/* Change icon */}
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="flex items-center gap-2 rounded-full border border-cream-dark px-4 py-2 text-sm text-ink-muted transition hover:border-gold hover:text-gold"
+          >
+            <GroupIconDisplay icon={icon} size="sm" />
+            <Pencil className="h-3.5 w-3.5" />
+            Change Icon
+          </button>
+
+          {/* Archive */}
+          <button
+            type="button"
+            onClick={() => void handleArchive()}
+            disabled={busy}
+            className="flex items-center gap-2 rounded-full border border-cream-dark px-4 py-2 text-sm text-ink-muted transition hover:border-rose-300 hover:text-rose-600 disabled:opacity-40"
+          >
+            <Archive className="h-4 w-4" />
+            Archive
+          </button>
+        </div>
       )}
     </div>
+    </>
   );
 }

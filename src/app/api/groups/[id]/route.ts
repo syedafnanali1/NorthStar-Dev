@@ -17,6 +17,7 @@ const patchSchema = z.object({
   name: z.string().min(2).max(80).optional(),
   description: z.string().max(500).optional(),
   type: z.enum(["public", "private"]).optional(),
+  icon: z.string().max(10).optional(),
 });
 
 export async function GET(

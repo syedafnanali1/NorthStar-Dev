@@ -960,6 +960,7 @@ export const groups = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     coverImage: text("cover_image"),
+    icon: text("icon").default("⭐"),
     // Denormalized counts — updated on every membership change
     memberCount: integer("member_count").default(0).notNull(),
     // Computed from group_engagement_logs; updated by background job or trigger

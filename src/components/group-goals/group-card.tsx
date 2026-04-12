@@ -1,11 +1,10 @@
 "use client";
 
 // src/components/group-goals/group-card.tsx
-// Community Group card — same visual structure as GroupGoalCard.
 
 import Link from "next/link";
 import { Crown, Users, Globe, Lock } from "lucide-react";
-import { cn } from "@/lib/utils/index";
+import { GroupIconDisplay } from "./group-icon-picker";
 import type { GroupWithMeta } from "@/server/services/groups.service";
 
 interface GroupCardProps {
@@ -13,30 +12,14 @@ interface GroupCardProps {
   currentUserId: string;
 }
 
-// Map the group category enum to an accent color
 const CATEGORY_COLORS: Record<string, string> = {
-  health:     "#4caf82",
-  fitness:    "#e07d3a",
-  finance:    "#3a7fe0",
-  mindset:    "#8b5cf6",
-  writing:    "#d97706",
-  reading:    "#92644a",
-  career:     "#0891b2",
-  lifestyle:  "#db2777",
-  creativity: "#7c3aed",
-  community:  "#059669",
-  other:      "#C4963A",
+  health: "#4caf82", fitness: "#e07d3a", finance: "#3a7fe0",
+  mindset: "#8b5cf6", writing: "#d97706", reading: "#92644a",
+  career: "#0891b2", lifestyle: "#db2777", creativity: "#7c3aed",
+  community: "#059669", other: "#C4963A",
 };
 
-function accentFor(category: string | null | undefined): string {
-  return category ? (CATEGORY_COLORS[category] ?? "#C4963A") : "#C4963A";
-}
-
-function MemberAvatarStack({
-  members,
-}: {
-  members: GroupWithMeta["members"];
-}) {
+function MemberAvatarStack({ members }: { members: GroupWithMeta["members"] }) {
   const visible = members.slice(0, 4);
   const overflow = members.length - 4;
   return (
@@ -48,16 +31,14 @@ function MemberAvatarStack({
         return (
           <div
             key={m.id}
+            title={m.name ?? "Member"}
             className="relative inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-cream-paper bg-gold text-[9px] font-bold text-ink"
             style={{ marginLeft: i === 0 ? 0 : -6, zIndex: visible.length - i }}
-            title={m.name ?? "Member"}
           >
-            {m.image ? (
+            {m.image
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={m.image} alt={m.name ?? ""} className="h-full w-full object-cover" />
-            ) : (
-              inits
-            )}
+              ? <img src={m.image} alt={m.name ?? ""} className="h-full w-full object-cover" />
+              : inits}
           </div>
         );
       })}
@@ -79,14 +60,15 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
     : `/groups/${group.id}`;
 
   const category = "category" in group && group.category ? (group.category as string) : null;
-  const accent = accentFor(category);
+  const icon = "icon" in group ? (group.icon as string | null) : null;
+  const accent = category ? (CATEGORY_COLORS[category] ?? "#C4963A") : "#C4963A";
   const owner = group.members.find((m) => m.role === "owner") ?? group.members[0];
   const isPublic = group.type === "public";
 
   return (
-    <div className="group/card relative flex flex-col overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+    <div className="group/card relative flex flex-col overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
 
-      {/* Gradient header — mirrors GroupGoalCard */}
+      {/* Gradient header */}
       <div
         className="relative h-24 w-full overflow-hidden"
         style={{
@@ -94,35 +76,17 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
           borderBottom: `1px solid ${accent}33`,
         }}
       >
-        {/* Accent stripe */}
+        {/* Thin accent stripe */}
         <div className="absolute inset-x-0 top-0 h-0.5" style={{ background: accent }} />
 
-        {/* Emoji / cover image */}
+        {/* Icon — left-aligned, vertically centred */}
         <div className="absolute left-4 top-1/2 -translate-y-1/2">
-          {group.coverImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={group.coverImage}
-              alt=""
-              className="h-14 w-14 rounded-2xl object-cover shadow-sm"
-            />
-          ) : (
-            <div
-              className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl shadow-sm"
-              style={{ background: `${accent}22`, border: `1.5px solid ${accent}44` }}
-            >
-              ⭐
-            </div>
-          )}
+          <GroupIconDisplay icon={icon} size="md" accent={accent} />
         </div>
 
-        {/* Top-right badge: visibility */}
-        <div className="absolute right-3 top-3 flex items-center gap-1.5">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full bg-cream-paper/90 px-2 py-0.5 text-[10px] font-medium text-ink-muted backdrop-blur-sm"
-            )}
-          >
+        {/* Visibility badge — top-right */}
+        <div className="absolute right-3 top-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-cream-paper/90 px-2 py-0.5 text-[10px] font-medium text-ink-muted backdrop-blur-sm">
             {isPublic ? <Globe className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
             {isPublic ? "Public" : "Private"}
           </span>
@@ -131,6 +95,7 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
 
       {/* Body */}
       <div className="flex flex-1 flex-col p-4">
+
         {/* Category */}
         {category && (
           <p className="section-label mb-1">{category}</p>
@@ -151,7 +116,7 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
           </p>
         )}
 
-        {/* Creator */}
+        {/* Owner */}
         {owner && (
           <div className="mt-2.5 flex items-center gap-1.5">
             <Crown className="h-3 w-3 text-gold" />
@@ -173,23 +138,20 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
 
         <div className="flex-1" />
 
-        {/* Footer */}
+        {/* Footer — members + open button */}
         <div className="mt-3 flex items-center justify-between border-t border-cream-dark pt-3">
-          <div className="flex items-center gap-3">
-            {group.members.length > 0 && (
-              <MemberAvatarStack members={group.members} />
-            )}
+          <div className="flex items-center gap-2.5">
+            <MemberAvatarStack members={group.members} />
             <span className="flex items-center gap-1 text-xs text-ink-muted">
               <Users className="h-3 w-3" />
-              {group.memberCount}
+              {group.memberCount} {group.memberCount === 1 ? "member" : "members"}
             </span>
           </div>
-
           <Link
             href={href}
             className="inline-flex items-center gap-1 rounded-full bg-cream-dark px-3 py-1.5 text-xs font-semibold text-ink transition-all hover:bg-ink hover:text-cream-paper"
           >
-            Open <span>→</span>
+            Open →
           </Link>
         </div>
       </div>

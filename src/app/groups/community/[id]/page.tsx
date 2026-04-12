@@ -9,6 +9,7 @@ import { requireAuthUser } from "@/lib/auth/helpers";
 import { groupsService } from "@/server/services/groups.service";
 import { AppLayout } from "@/components/layout/app-layout";
 import { GroupProfileClient } from "./group-profile-client";
+import { GroupIconDisplay } from "@/components/group-goals/group-icon-picker";
 import { GroupGoalsClient } from "./group-goals-client";
 import { GroupCommunityTabs } from "./group-community-tabs";
 import { groupGoalItemsService } from "@/server/services/group-goal-items.service";
@@ -204,9 +205,10 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
 
             {/* Group icon */}
             <div className="absolute bottom-0 left-6 translate-y-1/2">
-              <div className="flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-gold/30 bg-gradient-to-br from-gold/20 to-gold/40 text-3xl shadow-md backdrop-blur-sm">
-                🌟
-              </div>
+              <GroupIconDisplay
+                icon={"icon" in group ? (group.icon as string | null) : null}
+                size="lg"
+              />
             </div>
           </div>
 
@@ -278,6 +280,7 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
                 myJoinRequestStatus={group.myJoinRequestStatus}
                 groupType={group.type}
                 myRecommendationRating={myCurrentRating}
+                currentIcon={"icon" in group ? (group.icon as string | null) : null}
               />
             </div>
           </div>
