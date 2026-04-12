@@ -12,7 +12,7 @@ interface RouteContext {
 }
 
 const rateSchema = z.object({
-  rating: z.number().int().min(1).max(10),
+  rating: z.number().int().min(1).max(5),
 });
 
 export async function POST(
@@ -28,7 +28,7 @@ export async function POST(
     const validated = rateSchema.safeParse(body);
     if (!validated.success) {
       return NextResponse.json(
-        { error: "Rating must be an integer between 1 and 10" },
+        { error: "Rating must be an integer between 1 and 5" },
         { status: 422 }
       );
     }

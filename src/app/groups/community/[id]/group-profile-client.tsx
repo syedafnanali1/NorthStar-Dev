@@ -136,7 +136,7 @@ export function GroupProfileClient({
           {savedRating ? "Your rating" : "Rate this group"}
         </p>
         <div className="flex items-center gap-1" onMouseLeave={() => setHoverRating(0)}>
-          {Array.from({ length: 10 }).map((_, i) => {
+          {Array.from({ length: 5 }).map((_, i) => {
             const val = i + 1;
             return (
               <button
@@ -145,12 +145,12 @@ export function GroupProfileClient({
                 disabled={ratingBusy}
                 onMouseEnter={() => setHoverRating(val)}
                 onClick={() => void handleRate(val)}
-                aria-label={`Rate ${val} out of 10`}
+                aria-label={`Rate ${val} out of 5`}
                 className="p-0.5 transition-transform hover:scale-125 disabled:opacity-50"
               >
                 <Star
                   className={cn(
-                    "h-4 w-4 transition-colors",
+                    "h-5 w-5 transition-colors",
                     val <= displayRating
                       ? "fill-gold text-gold"
                       : "fill-transparent text-cream-dark"
@@ -160,7 +160,7 @@ export function GroupProfileClient({
             );
           })}
           {savedRating && (
-            <span className="ml-1 text-xs text-ink-muted">{savedRating}/10</span>
+            <span className="ml-1 text-xs text-ink-muted">{savedRating}/5</span>
           )}
         </div>
       </div>

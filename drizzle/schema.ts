@@ -454,6 +454,9 @@ export const goals = pgTable(
     completedAt: timestamp("completed_at", { mode: "date" }),
     // Emoji for display
     emoji: text("emoji"),
+    // Group goal link — set when this personal goal mirrors a group goal item
+    groupGoalItemId: text("group_goal_item_id"),
+    groupId: text("group_id"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },

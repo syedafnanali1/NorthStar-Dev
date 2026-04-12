@@ -207,10 +207,12 @@ async function computePopularityScore(groupId: string): Promise<number> {
       )
     );
   const avgRating = Number(ratingRow?.avgRating ?? 0);
-  const ratingScore = (avgRating / 10) * 100 * 0.2;
+  // Rating stored as 1–5; normalize to 0–100 for scoring
+  const ratingScore = (avgRating / 5) * 100 * 0.2;
 
   const total = memberScore + commentScore + goalCompletionScore + ratingScore;
-  return Math.round(Math.min(total, 100) * 10) / 10;
+  // Always return a whole number — no decimals
+  return Math.round(Math.min(total, 100));
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────

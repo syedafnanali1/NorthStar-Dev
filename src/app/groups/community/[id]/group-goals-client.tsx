@@ -16,6 +16,7 @@ interface GroupGoalsClientProps {
   goals: GroupGoalWithMeta[];
   isMember: boolean;
   isAdminOrOwner: boolean;
+  isOwner: boolean;
 }
 
 export function GroupGoalsClient({
@@ -23,6 +24,7 @@ export function GroupGoalsClient({
   goals,
   isMember,
   isAdminOrOwner,
+  isOwner,
 }: GroupGoalsClientProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -42,7 +44,8 @@ export function GroupGoalsClient({
           )}
         </div>
 
-        {isAdminOrOwner && (
+        {/* Only the group owner can create goals */}
+        {isOwner && (
           <button
             type="button"
             onClick={() => setModalOpen(true)}
@@ -56,20 +59,17 @@ export function GroupGoalsClient({
 
       {/* Goals list */}
       {goals.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-cream-dark bg-cream-paper/60 px-8 py-16 text-center">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-cream-dark text-2xl">
-            <Target className="h-7 w-7 text-ink-muted" />
-          </div>
-          <p className="font-serif text-lg font-semibold text-ink">No group goals yet</p>
-          {isAdminOrOwner ? (
+        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-cream-dark bg-cream-paper/60 px-8 py-12 text-center">
+          <p className="font-serif text-base font-semibold text-ink">No group goals yet</p>
+          {isOwner ? (
             <>
               <p className="mt-1 max-w-xs text-sm text-ink-muted">
-                Create your first group goal to give members something to work toward together.
+                Create the first goal to give members something to work toward together.
               </p>
               <button
                 type="button"
                 onClick={() => setModalOpen(true)}
-                className="btn-gold mt-5 flex items-center gap-1.5"
+                className="btn-gold mt-4 flex items-center gap-1.5"
               >
                 <Plus className="h-4 w-4" />
                 Create first goal
@@ -77,7 +77,7 @@ export function GroupGoalsClient({
             </>
           ) : (
             <p className="mt-1 max-w-xs text-sm text-ink-muted">
-              The group admin hasn&apos;t created any goals yet. Check back soon.
+              The group owner hasn&apos;t created any goals yet. Check back soon.
             </p>
           )}
         </div>

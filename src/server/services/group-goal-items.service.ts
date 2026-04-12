@@ -10,7 +10,9 @@ import {
   groupMembers,
   groups,
   users,
+  goals,
 } from "@/drizzle/schema";
+import { nanoid } from "nanoid";
 import {
   and,
   asc,
@@ -84,6 +86,23 @@ async function requireAdminOrOwner(groupId: string, userId: string): Promise<voi
     .limit(1);
   if (!m || !["owner", "admin"].includes(m.role)) {
     throw new Error("Only group owners and admins can perform this action.");
+  }
+}
+
+async function requireOwner(groupId: string, userId: string): Promise<void> {
+  const [m] = await db
+    .select({ role: groupMembers.role })
+    .from(groupMembers)
+    .where(
+      and(
+        eq(groupMembers.groupId, groupId),
+        eq(groupMembers.userId, userId),
+        eq(groupMembers.status, "active")
+      )
+    )
+    .limit(1);
+  if (!m || m.role !== "owner") {
+    throw new Error("Only the group owner can perform this action.");
   }
 }
 
@@ -291,7 +310,7 @@ export const groupGoalItemsService = {
     creatorId: string,
     input: CreateGroupGoalInput
   ): Promise<GroupGoalItem> {
-    await requireAdminOrOwner(groupId, creatorId);
+    await requireOwner(groupId, creatorId);
 
     const [goal] = await db
       .insert(groupGoalItems)
@@ -377,9 +396,18 @@ export const groupGoalItemsService = {
     groupGoalItemId: string,
     userId: string
   ): Promise<GroupGoalMemberTracker | null> {
-    // Fetch goal to get groupId
+    // Fetch goal details (title, category, emoji, color, etc.)
     const [goal] = await db
-      .select({ groupId: groupGoalItems.groupId })
+      .select({
+        groupId: groupGoalItems.groupId,
+        title: groupGoalItems.title,
+        description: groupGoalItems.description,
+        category: groupGoalItems.category,
+        emoji: groupGoalItems.emoji,
+        color: groupGoalItems.color,
+        targetValue: groupGoalItems.targetValue,
+        unit: groupGoalItems.unit,
+      })
       .from(groupGoalItems)
       .where(eq(groupGoalItems.id, groupGoalItemId))
       .limit(1);
@@ -400,10 +428,20 @@ export const groupGoalItemsService = {
       .limit(1);
 
     if (existing) {
-      // Remove tracker + its check-ins (cascade handles check-ins)
+      // Remove tracker
       await db
         .delete(groupGoalMemberTrackers)
         .where(eq(groupGoalMemberTrackers.id, existing.id));
+      // Archive the linked personal goal (soft delete)
+      await db
+        .update(goals)
+        .set({ isArchived: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(goals.userId, userId),
+            eq(goals.groupGoalItemId, groupGoalItemId)
+          )
+        );
       return null;
     }
 
@@ -418,6 +456,35 @@ export const groupGoalItemsService = {
       .returning();
 
     if (!tracker) throw new Error("Failed to add goal to calendar.");
+
+    // Create a personal goal mirroring this group goal so it shows on the dashboard
+    const categoryMap: Record<string, "health" | "finance" | "writing" | "body" | "mindset" | "custom"> = {
+      health: "health",
+      finance: "finance",
+      writing: "writing",
+      body: "body",
+      mindset: "mindset",
+    };
+    const personalCategory = categoryMap[goal.category ?? ""] ?? "custom";
+    await db.insert(goals).values({
+      id: `goal_${nanoid(12)}`,
+      userId,
+      title: goal.title,
+      why: goal.description ?? null,
+      category: personalCategory,
+      color: goal.color ?? "#C4963A",
+      emoji: goal.emoji ?? "👥",
+      targetValue: goal.targetValue ?? null,
+      currentValue: 0,
+      unit: goal.unit ?? null,
+      milestones: [],
+      completedMilestones: [],
+      isPublic: false,
+      isArchived: false,
+      isCompleted: false,
+      groupGoalItemId,
+      groupId: goal.groupId,
+    }).onConflictDoNothing();
 
     // Recalculate popularity score after new tracker
     void groupsService.recalculatePopularityScore(goal.groupId);

@@ -127,6 +127,11 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                   {/* Category */}
                   <p className="section-label" style={{ color: goal.color }}>
                     {CATEGORY_LABELS[goal.category] ?? goal.category}
+                    {goal.groupGoalItemId && (
+                      <span className="ml-2 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-600 normal-case tracking-normal font-semibold" style={{ fontSize: "0.6rem" }}>
+                        👥 Group Goal
+                      </span>
+                    )}
                     {goal.isCompleted && (
                       <span className="ml-2 rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 text-gold normal-case tracking-normal font-semibold" style={{ fontSize: "0.6rem" }}>
                         ✓ Completed

@@ -9,7 +9,6 @@ import { requireAuthUser } from "@/lib/auth/helpers";
 import { groupsService } from "@/server/services/groups.service";
 import { AppLayout } from "@/components/layout/app-layout";
 import { GroupProfileClient } from "./group-profile-client";
-import { CommunityJoinRequests } from "./community-join-requests";
 import { GroupGoalsClient } from "./group-goals-client";
 import { GroupCommunityTabs } from "./group-community-tabs";
 import { groupGoalItemsService } from "@/server/services/group-goal-items.service";
@@ -24,12 +23,13 @@ import {
   Zap,
   ArrowLeft,
   Target,
-  BarChart2,
   Star,
+  Bell,
+  ChevronRight,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { groups as groupsTable, groupMembers } from "@/drizzle/schema";
-import { and, eq } from "drizzle-orm";
+import { and, avg, eq } from "drizzle-orm";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -84,84 +84,27 @@ function Avatar({
   );
 }
 
-function PopularityGauge({ score, tier }: { score: number; tier: "Rising" | "Active" | "Elite" }) {
-  const pct = Math.min(score, 100);
-
-  const tierConfig = {
+function TierBadge({ tier }: { tier: "Rising" | "Active" | "Elite" }) {
+  const config = {
     Rising: {
-      color: "from-sky-400 to-sky-500",
-      bg: "bg-sky-50",
-      text: "text-sky-600",
-      icon: <TrendingUp className="h-4 w-4" />,
-      label: "Rising",
+      icon: <TrendingUp className="h-3 w-3" />,
+      classes: "bg-sky-50 text-sky-600",
     },
     Active: {
-      color: "from-emerald-400 to-emerald-500",
-      bg: "bg-emerald-50",
-      text: "text-emerald-600",
-      icon: <Zap className="h-4 w-4" />,
-      label: "Active",
+      icon: <Zap className="h-3 w-3" />,
+      classes: "bg-emerald-50 text-emerald-600",
     },
     Elite: {
-      color: "from-gold/80 to-gold",
-      bg: "bg-gold/10",
-      text: "text-gold",
-      icon: <Crown className="h-4 w-4" />,
-      label: "Elite",
+      icon: <Crown className="h-3 w-3" />,
+      classes: "bg-gold/10 text-gold",
     },
   };
-
-  const cfg = tierConfig[tier];
-
+  const { icon, classes } = config[tier];
   return (
-    <div className="rounded-2xl border border-cream-dark bg-cream-paper p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-muted">
-          Popularity Score
-        </p>
-        <span
-          className={cn(
-            "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold",
-            cfg.bg,
-            cfg.text
-          )}
-        >
-          {cfg.icon}
-          {cfg.label}
-        </span>
-      </div>
-
-      {/* Score number */}
-      <div className="mb-3 flex items-end gap-1">
-        <span className="font-serif text-4xl font-bold text-ink leading-none">
-          {pct}
-        </span>
-        <span className="mb-0.5 text-sm text-ink-muted">/100</span>
-      </div>
-
-      {/* Bar */}
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-cream-dark">
-        <div
-          className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-1000", cfg.color)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      {/* Formula legend */}
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {[
-          { label: "Members", pct: "30%" },
-          { label: "Comments (30d)", pct: "20%" },
-          { label: "Goal completion", pct: "30%" },
-          { label: "Member ratings", pct: "20%" },
-        ].map(({ label, pct: weight }) => (
-          <div key={label} className="flex items-center justify-between gap-2">
-            <span className="text-xs text-ink-muted">{label}</span>
-            <span className="text-xs font-semibold text-ink">{weight}</span>
-          </div>
-        ))}
-      </div>
-    </div>
+    <span className={cn("flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold", classes)}>
+      {icon}
+      {tier}
+    </span>
   );
 }
 
@@ -174,7 +117,8 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
   const group = await groupsService.getGroupPublicProfile(id, user.id);
   if (!group) notFound();
 
-  const isAdminOrOwner = group.myRole === "owner" || group.myRole === "admin";
+  const isOwner = group.myRole === "owner";
+  const isAdminOrOwner = isOwner || group.myRole === "admin";
   const isMember = group.myRole !== null;
 
   // For member rating: fetch their current rating from DB
@@ -190,18 +134,31 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
     myCurrentRating = row?.recommendationRating ?? null;
   }
 
-  // Pending join requests (owners/admins only)
-  let pendingRequests: Awaited<ReturnType<typeof groupsService.getPendingJoinRequests>> = [];
-  if (isAdminOrOwner) {
-    pendingRequests = await groupsService.getPendingJoinRequests(id, user.id);
+  // Avg group rating from all members
+  const [ratingRow] = await db
+    .select({ avgRating: avg(groupMembers.recommendationRating) })
+    .from(groupMembers)
+    .where(
+      and(
+        eq(groupMembers.groupId, id),
+        eq(groupMembers.status, "active")
+      )
+    );
+  const avgRating = ratingRow?.avgRating ? Math.round(Number(ratingRow.avgRating) * 10) / 10 : null;
+
+  // Pending join requests count (owners only, for sidebar badge)
+  let pendingCount = 0;
+  if (isOwner) {
+    const requests = await groupsService.getPendingJoinRequests(id, user.id);
+    pendingCount = requests.length;
   }
 
-  // Group goals (visible to all members + admins; non-members see public goals for public groups)
+  // Group goals (visible to all members + public group visitors)
   const groupGoals = isMember || group.type === "public"
     ? await groupGoalItemsService.getGroupGoals(id, user.id)
     : [];
 
-  // Chat posts — only fetch for members (private groups) or all users (public groups)
+  // Chat posts
   const initialPosts = isMember || group.type === "public"
     ? await groupChatService.getPosts(id, user.id)
     : [];
@@ -221,10 +178,10 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
         {/* ── Hero ── */}
         <div className="overflow-hidden rounded-3xl border border-cream-dark bg-cream-paper shadow-sm">
           {/* Banner */}
-          <div className="relative h-40 w-full bg-gradient-to-br from-gold/10 via-gold/20 to-gold/8">
+          <div className="relative h-36 w-full bg-gradient-to-br from-gold/10 via-gold/20 to-gold/8">
             <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-gold/80 to-gold/30" />
 
-            {/* Type badge */}
+            {/* Badges top-right */}
             <div className="absolute right-4 top-4 flex items-center gap-2">
               {group.popularityRank && group.popularityRank <= 10 && (
                 <span className="flex items-center gap-1.5 rounded-full bg-gold px-3 py-1 text-xs font-bold text-cream-paper">
@@ -260,27 +217,51 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
             </h1>
 
             {group.description && (
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-ink-muted">
+              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-ink-muted">
                 {group.description}
               </p>
             )}
 
             {/* Stats row */}
-            <div className="mt-4 flex flex-wrap items-center gap-5">
-              <span className="flex items-center gap-1.5 text-sm text-ink-muted">
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              {/* Members */}
+              <div className="flex items-center gap-1.5 text-sm text-ink-muted">
                 <Users className="h-4 w-4" />
                 <strong className="text-ink">{group.memberCount.toLocaleString()}</strong>{" "}
                 {group.memberCount === 1 ? "member" : "members"}
-              </span>
-              {group.recentGoalsCount > 0 && (
-                <span className="flex items-center gap-1.5 text-sm text-ink-muted">
+              </div>
+
+              {/* Active goals */}
+              {groupGoals.length > 0 && (
+                <div className="flex items-center gap-1.5 text-sm text-ink-muted">
                   <Target className="h-4 w-4" />
-                  <strong className="text-ink">{group.recentGoalsCount}</strong> active goals
-                </span>
+                  <strong className="text-ink">{groupGoals.length}</strong> active{" "}
+                  {groupGoals.length === 1 ? "goal" : "goals"}
+                </div>
               )}
+
+              {/* Popularity score + tier */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-ink-muted">
+                  <strong className="text-ink">{group.popularityScore}</strong>
+                  <span className="ml-1 text-xs">/100</span>
+                </span>
+                <TierBadge tier={group.popularityTier} />
+              </div>
+
+              {/* Avg rating */}
+              {avgRating && avgRating > 0 && (
+                <div className="flex items-center gap-1">
+                  <Star className="h-3.5 w-3.5 fill-gold text-gold" />
+                  <span className="text-sm font-semibold text-ink">{avgRating}</span>
+                  <span className="text-xs text-ink-muted">/5</span>
+                </div>
+              )}
+
+              {/* Role badge */}
               {isMember && (
                 <span className="rounded-full bg-gold/15 px-3 py-1 text-xs font-semibold text-gold">
-                  {group.myRole === "owner"
+                  {isOwner
                     ? "You own this group"
                     : group.myRole === "admin"
                       ? "You're an admin"
@@ -289,7 +270,7 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
               )}
             </div>
 
-            {/* Join / rate / archive actions */}
+            {/* Actions (join / rate / archive) */}
             <div className="mt-5">
               <GroupProfileClient
                 groupId={group.id}
@@ -302,14 +283,126 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* ── Two-column layout ── */}
+        {/* ── Main layout ── */}
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Left: Popularity + Members */}
-          <div className="space-y-6 lg:col-span-1">
-            {/* Popularity gauge */}
-            <PopularityGauge score={group.popularityScore} tier={group.popularityTier} />
 
-            {/* Members preview */}
+          {/* ── Main content (goals + feed) ── */}
+          <div className="space-y-6 lg:col-span-2">
+            {/* Private gate for non-members */}
+            {group.type === "private" && !isMember && (
+              <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-cream-dark bg-cream-paper/60 px-8 py-16 text-center">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-cream-dark text-3xl">
+                  🔒
+                </div>
+                <p className="font-serif text-xl font-semibold text-ink">
+                  Private Group — Invite Only
+                </p>
+                <p className="mt-2 max-w-xs text-sm text-ink-muted">
+                  This group is invite-only. Ask a member to invite you, or explore other public
+                  groups.
+                </p>
+                <Link
+                  href="/groups/discover"
+                  className="btn-gold mt-6 inline-flex items-center gap-2"
+                >
+                  <Globe className="h-4 w-4" />
+                  Browse Public Groups
+                </Link>
+              </div>
+            )}
+
+            {/* Public non-member: teaser stats */}
+            {group.type === "public" && !isMember && (
+              <div className="rounded-3xl border border-cream-dark bg-cream-paper p-5 shadow-sm">
+                <div className="grid grid-cols-3 gap-4 rounded-2xl border border-cream-dark bg-cream p-4">
+                  <div className="text-center">
+                    <p className="font-serif text-xl font-bold text-ink">
+                      {group.memberCount.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-ink-muted">Members</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-serif text-xl font-bold text-ink">
+                      {groupGoals.length}
+                    </p>
+                    <p className="text-xs text-ink-muted">Active goals</p>
+                  </div>
+                  <div className="text-center">
+                    <p
+                      className={cn(
+                        "font-serif text-xl font-bold",
+                        group.popularityTier === "Elite"
+                          ? "text-gold"
+                          : group.popularityTier === "Active"
+                            ? "text-emerald-600"
+                            : "text-sky-600"
+                      )}
+                    >
+                      {group.popularityTier}
+                    </p>
+                    <p className="text-xs text-ink-muted">Tier</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Goals section */}
+            {(isMember || group.type === "public") && (
+              <section className="space-y-4">
+                <GroupGoalsClient
+                  groupId={group.id}
+                  goals={groupGoals}
+                  isMember={isMember}
+                  isAdminOrOwner={isAdminOrOwner}
+                  isOwner={isOwner}
+                />
+              </section>
+            )}
+
+            {/* Group Feed (chat + activity) */}
+            {(isMember || group.type === "public") && (
+              <section className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink">
+                    <span className="text-[14px] leading-none text-cream-paper">💬</span>
+                  </div>
+                  <h2 className="font-serif text-xl font-semibold text-ink">Group Feed</h2>
+                </div>
+                <GroupCommunityTabs
+                  groupId={group.id}
+                  initialPosts={initialPosts}
+                  isMember={isMember}
+                  memberCount={group.memberCount}
+                />
+              </section>
+            )}
+          </div>
+
+          {/* ── Sidebar ── */}
+          <div className="space-y-4 lg:col-span-1">
+            {/* Join requests (owner only) */}
+            {isOwner && pendingCount > 0 && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-amber-600" />
+                    <p className="text-sm font-semibold text-amber-800">
+                      {pendingCount} join{" "}
+                      {pendingCount === 1 ? "request" : "requests"}
+                    </p>
+                  </div>
+                  <Link
+                    href={`/groups/community/${id}/requests`}
+                    className="flex items-center gap-0.5 text-xs font-semibold text-amber-700 hover:text-amber-900"
+                  >
+                    Review
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Members list */}
             <div className="overflow-hidden rounded-3xl border border-cream-dark bg-cream-paper shadow-sm">
               <div className="border-b border-cream-dark px-5 py-4">
                 <div className="flex items-center gap-2">
@@ -360,151 +453,7 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
               </div>
             </div>
           </div>
-
-          {/* Right: Stats + private gate / join requests */}
-          <div className="space-y-6 lg:col-span-2">
-            {/* Private gate for non-members */}
-            {group.type === "private" && !isMember && (
-              <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-cream-dark bg-cream-paper/60 px-8 py-16 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-cream-dark text-3xl">
-                  🔒
-                </div>
-                <p className="font-serif text-xl font-semibold text-ink">
-                  Group is Private — Invite Only
-                </p>
-                <p className="mt-2 max-w-xs text-sm text-ink-muted">
-                  This group is invite-only. Ask a member to invite you, or explore other public
-                  groups.
-                </p>
-                <Link
-                  href="/groups/discover"
-                  className="btn-gold mt-6 inline-flex items-center gap-2"
-                >
-                  <Globe className="h-4 w-4" />
-                  Browse Public Groups
-                </Link>
-              </div>
-            )}
-
-            {/* Public non-member: teaser + call to action */}
-            {group.type === "public" && !isMember && (
-              <div className="rounded-3xl border border-cream-dark bg-cream-paper p-6 shadow-sm">
-                <div className="mb-4 flex items-center gap-2">
-                  <BarChart2 className="h-5 w-5 text-gold" />
-                  <h2 className="font-serif text-lg font-semibold text-ink">About this group</h2>
-                </div>
-                <p className="text-sm leading-relaxed text-ink-muted">
-                  {group.description ??
-                    "This is a public group on NorthStar. Request to join to see goals, member activity, and group chat."}
-                </p>
-                <div className="mt-5 grid grid-cols-2 gap-3 rounded-2xl border border-cream-dark bg-cream p-4 sm:grid-cols-3">
-                  <div className="text-center">
-                    <p className="font-serif text-xl font-bold text-ink">
-                      {group.memberCount.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-ink-muted">Members</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="font-serif text-xl font-bold text-ink">
-                      {group.recentGoalsCount}
-                    </p>
-                    <p className="text-xs text-ink-muted">Active goals</p>
-                  </div>
-                  <div className="col-span-2 text-center sm:col-span-1">
-                    <p
-                      className={cn(
-                        "font-serif text-xl font-bold",
-                        group.popularityTier === "Elite"
-                          ? "text-gold"
-                          : group.popularityTier === "Active"
-                            ? "text-emerald-600"
-                            : "text-sky-600"
-                      )}
-                    >
-                      {group.popularityTier}
-                    </p>
-                    <p className="text-xs text-ink-muted">Popularity tier</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Member: group management info */}
-            {isMember && (
-              <div className="rounded-3xl border border-cream-dark bg-cream-paper p-6 shadow-sm">
-                <div className="mb-4 flex items-center gap-2">
-                  <BarChart2 className="h-5 w-5 text-gold" />
-                  <h2 className="font-serif text-lg font-semibold text-ink">Group at a glance</h2>
-                </div>
-                <div className="grid grid-cols-3 gap-4 rounded-2xl border border-cream-dark bg-cream p-4">
-                  <div className="text-center">
-                    <p className="font-serif text-2xl font-bold text-ink">
-                      {group.memberCount.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-ink-muted">Members</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="font-serif text-2xl font-bold text-ink">
-                      {group.recentGoalsCount}
-                    </p>
-                    <p className="text-xs text-ink-muted">Active goals</p>
-                  </div>
-                  <div className="text-center">
-                    <p
-                      className={cn(
-                        "font-serif text-2xl font-bold",
-                        group.popularityTier === "Elite"
-                          ? "text-gold"
-                          : group.popularityTier === "Active"
-                            ? "text-emerald-600"
-                            : "text-sky-600"
-                      )}
-                    >
-                      {group.popularityScore}
-                    </p>
-                    <p className="text-xs text-ink-muted">Popularity score</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Join requests (admins/owners only) */}
-            {isAdminOrOwner && (
-              <CommunityJoinRequests groupId={group.id} requests={pendingRequests} />
-            )}
-          </div>
         </div>
-
-        {/* ── Goals Section ── */}
-        {(isMember || group.type === "public") && (
-          <section className="space-y-4">
-            <GroupGoalsClient
-              groupId={group.id}
-              goals={groupGoals}
-              isMember={isMember}
-              isAdminOrOwner={isAdminOrOwner}
-            />
-          </section>
-        )}
-
-        {/* ── Chat & Members Section ── */}
-        {(isMember || group.type === "public") && (
-          <section className="space-y-4">
-            {/* Section header */}
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink">
-                <span className="text-[14px] leading-none text-cream-paper">💬</span>
-              </div>
-              <h2 className="font-serif text-xl font-semibold text-ink">Community</h2>
-            </div>
-            <GroupCommunityTabs
-              groupId={group.id}
-              initialPosts={initialPosts}
-              isMember={isMember}
-              memberCount={group.memberCount}
-            />
-          </section>
-        )}
       </div>
     </AppLayout>
   );
