@@ -184,7 +184,7 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
               onClick={s.onClick}
               className="flex flex-col gap-0.5 rounded-xl border border-white/6 bg-white/4 px-3 py-2.5 transition-all hover:bg-white/6 hover:border-white/10 cursor-pointer"
             >
-              <div className="flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-0.5">
                 <span className={cn(
                   "font-serif font-semibold sm:text-lg",
                   momentum.streakDays >= 7 ? "text-[#E8C97A]" : "text-white"
