@@ -383,10 +383,6 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
 
   const monthLogs = allLogs.filter((l) => l.date.startsWith(format(currentMonth, "yyyy-MM")));
   const daysLogged     = monthLogs.length;
-  const tasksThisMonth = monthLogs.reduce(
-    (sum, log) => sum + getLogDailyIntentions(log).filter((i) => i.done).length, 0
-  );
-  const bestDayTasks = Math.max(...allLogs.map((log) => getLogDailyIntentions(log).filter((i) => i.done).length), 0);
   const monthProgressPct = days.length > 0 ? Math.round((daysLogged / days.length) * 100) : 0;
 
   const moodTrend = getDominantLabel(
@@ -633,63 +629,22 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
       {/* Month Stats Strip */}
       <div className="grid grid-cols-4 divide-x divide-cream-dark overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper">
         {[
-          { val: daysLogged,             label: "Days Logged"    },
-          { val: tasksThisMonth,         label: "Tasks Done"     },
-          { val: bestDayTasks,           label: "Best Day"       },
-          { val: `${monthProgressPct}%`, label: "Month Progress" },
+          { val: daysLogged,                  label: "Days Logged"    },
+          { val: moodTrend || "Not logged",   label: "Mood", compact: true  },
+          { val: sleepTrend || "Not logged",  label: "Sleep", compact: true },
+          { val: `${monthProgressPct}%`,      label: "Month Progress" },
         ].map((s) => (
           <div key={s.label} className="px-4 py-3.5 lg:px-5 lg:py-4">
-            <div className="text-xl font-serif font-semibold text-ink lg:text-2xl">{s.val}</div>
+            <div
+              className={cn(
+                "font-serif font-semibold text-ink",
+                s.compact ? "truncate text-sm leading-tight lg:text-base" : "text-xl lg:text-2xl"
+              )}
+            >
+              {s.val}
+            </div>
             <p className="mt-1 section-label">{s.label}</p>
           </div>
-        ))}
-      </div>
-
-      {/* Trend Chips */}
-      {(moodTrend || sleepTrend) && (
-        <div className="flex flex-wrap gap-2">
-          {moodTrend && (
-            <span className="stat-chip">
-              <span className="section-label">Mood</span>
-              <span className="text-ink-soft">{moodTrend}</span>
-            </span>
-          )}
-          {sleepTrend && (
-            <span className="stat-chip">
-              <span className="section-label">Sleep</span>
-              <span className="text-ink-soft">{sleepTrend}</span>
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Goal Filter Pills (mobile) */}
-      <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide lg:hidden">
-        <button
-          type="button"
-          onClick={() => setFilterGoalId(null)}
-          className={cn(
-            "flex-shrink-0 h-8 rounded-full border px-3.5 text-sm font-medium transition-all",
-            !filterGoalId ? "border-ink bg-ink text-cream-paper" : "border-cream-dark bg-cream-paper text-ink-muted"
-          )}
-        >
-          All
-        </button>
-        {goals.map((g) => (
-          <button
-            key={g.id}
-            type="button"
-            onClick={() => setFilterGoalId(filterGoalId === g.id ? null : g.id)}
-            className="flex-shrink-0 flex items-center gap-1.5 h-8 rounded-full border px-3 text-sm font-medium transition-all hover:opacity-80"
-            style={{
-              borderColor: filterGoalId === g.id ? g.color : undefined,
-              color: g.color,
-              background: filterGoalId === g.id ? `${g.color}18` : undefined,
-            }}
-          >
-            <span className="h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: g.color }} />
-            {g.emoji} <span className="max-w-[96px] truncate">{g.title}</span>
-          </button>
         ))}
       </div>
 
