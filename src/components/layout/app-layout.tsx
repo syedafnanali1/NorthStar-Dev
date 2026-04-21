@@ -39,9 +39,11 @@ export async function AppLayout({
       <main
         className={cn(
           "relative z-10",
-          // Mobile — comfortable spacing, room above bottom nav
-          "px-4 pt-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]",
-          // Tablet — more generous padding
+          // Mobile — comfortable horizontal padding, extra bottom for bottom nav + safe area
+          "px-4 pt-3",
+          // Bottom: room for fixed bottom nav (52px) + safe-area-inset-bottom + extra breathing room
+          "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]",
+          // Tablet
           "sm:px-5 sm:pt-4",
           "md:px-6 md:pt-5",
           // Desktop — offset for sidebar + right panel

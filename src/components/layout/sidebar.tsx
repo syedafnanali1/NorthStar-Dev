@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn, initials } from "@/lib/utils";
 import type { Session } from "next-auth";
 import {
@@ -31,7 +31,6 @@ const DESKTOP_NAV_ITEMS = [
   { href: "/groups", label: "Groups", icon: Trophy },
 ] as const;
 
-// Clean 5-item mobile nav — no duplicates
 const MOBILE_NAV_ITEMS = [
   { href: "/dashboard", label: "Goals", icon: Target },
   { href: "/calendar", label: "Log", icon: CalendarDays },
@@ -45,6 +44,7 @@ export function Sidebar({ user }: SidebarProps) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const prevPath = useRef(pathname);
 
   useEffect(() => {
     const saved = localStorage.getItem("sidebar-expanded");
@@ -53,6 +53,16 @@ export function Sidebar({ user }: SidebarProps) {
     document.documentElement.style.setProperty("--sidebar-width", initial ? "216px" : "72px");
     setMounted(true);
   }, []);
+
+  // Haptic feedback on nav tap (Capacitor native)
+  const triggerHaptic = async () => {
+    try {
+      const { Haptics, ImpactStyle } = await import("@capacitor/haptics");
+      await Haptics.impact({ style: ImpactStyle.Light });
+    } catch {
+      // Not running in Capacitor — no-op
+    }
+  };
 
   const toggleSidebar = () => {
     setExpanded((prev) => {
@@ -129,12 +139,10 @@ export function Sidebar({ user }: SidebarProps) {
 
         {/* Bottom Actions */}
         <div className="flex flex-col gap-0.5 px-2.5 pt-2 border-t border-cream-dark">
-          {/* Notification Bell */}
           <div className={cn("flex h-10 items-center rounded-xl", showLabel ? "w-full px-2.5" : "justify-center")}>
             <NotificationBell showLabel={showLabel} />
           </div>
 
-          {/* Dark Mode Toggle */}
           <button
             type="button"
             title={theme.dark ? "Switch to light mode" : "Switch to dark mode"}
@@ -151,7 +159,6 @@ export function Sidebar({ user }: SidebarProps) {
             </span>
           </button>
 
-          {/* Settings */}
           <Link
             href="/profile"
             title={!showLabel ? "Settings" : undefined}
@@ -168,7 +175,6 @@ export function Sidebar({ user }: SidebarProps) {
             </span>
           </Link>
 
-          {/* Profile / Avatar */}
           <Link
             href="/profile"
             title={user?.name ?? "Profile"}
@@ -195,14 +201,18 @@ export function Sidebar({ user }: SidebarProps) {
       </aside>
 
       {/* ── Mobile Top Header ────────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-cream-dark/50 bg-cream-paper/95 backdrop-blur-xl lg:hidden">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-2.5">
+      <header
+        className="sticky top-0 z-40 border-b border-cream-dark/40 bg-cream-paper/92 backdrop-blur-[20px] [-webkit-backdrop-filter:blur(20px)] lg:hidden"
+        style={{ paddingTop: "max(10px, env(safe-area-inset-top))" }}
+      >
+        <div className="mx-auto flex w-full max-w-lg items-center gap-3 px-4 pb-2.5">
+          {/* Logo */}
           <Link
             href="/dashboard"
-            className="flex items-center gap-2.5"
-            title="North Star"
+            className="flex items-center gap-2 select-none"
+            title="NorthStar"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-ink">
+            <span className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-ink shadow-sm flex-shrink-0">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                 <path
                   d="M12 2L14.4 9.6H22L15.8 14.4L18.2 22L12 17.2L5.8 22L8.2 14.4L2 9.6H9.6L12 2Z"
@@ -210,12 +220,12 @@ export function Sidebar({ user }: SidebarProps) {
                 />
               </svg>
             </span>
-            <span className="text-[0.875rem] font-bold tracking-tight text-ink">NorthStar</span>
+            <p className="text-[0.9rem] font-bold tracking-tight text-ink leading-none">NorthStar</p>
           </Link>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-0.5">
             {/* Notification Bell */}
-            <div className="flex items-center justify-center">
+            <div className="flex h-10 w-10 items-center justify-center">
               <NotificationBell showLabel={false} />
             </div>
 
@@ -224,19 +234,19 @@ export function Sidebar({ user }: SidebarProps) {
               type="button"
               title={theme.dark ? "Light mode" : "Dark mode"}
               onClick={theme.toggle}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-ink-muted transition-all hover:bg-cream hover:text-ink"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted transition-all active:scale-90 active:bg-cream-dark/60 select-none"
             >
               {theme.dark ? (
-                <Sun className="h-4 w-4" strokeWidth={1.75} />
+                <Sun className="h-[18px] w-[18px]" strokeWidth={1.75} />
               ) : (
-                <Moon className="h-4 w-4" strokeWidth={1.75} />
+                <Moon className="h-[18px] w-[18px]" strokeWidth={1.75} />
               )}
             </button>
 
-            {/* Profile */}
+            {/* Profile Avatar */}
             <Link
               href="/profile"
-              className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gold text-[10px] font-bold text-ink ring-2 ring-cream-dark transition-transform hover:scale-105"
+              className="ml-1 flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gold text-[11px] font-bold text-ink ring-2 ring-cream-dark transition-transform active:scale-90 select-none"
               title={user?.name ?? "Profile"}
             >
               {user?.image ? (
@@ -255,25 +265,69 @@ export function Sidebar({ user }: SidebarProps) {
       </header>
 
       {/* ── Mobile Bottom Navigation ─────────────────────────── */}
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-cream-dark/50 bg-cream-paper/98 pb-[calc(0.375rem+env(safe-area-inset-bottom))] pt-1 backdrop-blur-xl lg:hidden">
-        <div className="mx-auto grid max-w-sm grid-cols-5 gap-0.5 px-2">
+      <nav
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-cream-dark/50 bg-cream-paper/95 backdrop-blur-[24px] [-webkit-backdrop-filter:blur(24px)_saturate(180%)] lg:hidden"
+        style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto grid max-w-sm grid-cols-5 px-1 pt-1 pb-0.5">
           {MOBILE_NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive =
+              pathname === item.href || pathname.startsWith(item.href + "/");
             const Icon = item.icon;
 
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => {
+                  prevPath.current = pathname;
+                  triggerHaptic();
+                }}
                 className={cn(
-                  "flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 transition-all duration-150",
-                  isActive
-                    ? "bg-ink text-cream-paper"
-                    : "text-ink-muted hover:bg-cream hover:text-ink"
+                  "select-none relative flex flex-col items-center justify-center gap-[3px] py-2 px-1",
+                  "transition-all duration-150 rounded-xl",
+                  "min-h-[52px]",
+                  isActive ? "text-ink" : "text-ink-muted active:text-ink"
                 )}
               >
-                <Icon className="h-[18px] w-[18px]" strokeWidth={isActive ? 2.2 : 1.75} />
-                <span className="text-[10px] font-semibold leading-none tracking-tight">{item.label}</span>
+                {/* Subtle active tint behind entire item */}
+                {isActive && (
+                  <span
+                    className="absolute inset-x-1.5 inset-y-1 rounded-xl"
+                    style={{ background: "rgb(var(--ink-rgb) / 0.07)" }}
+                  />
+                )}
+
+                {/* Icon — filled pill when active */}
+                <span
+                  className={cn(
+                    "relative z-10 flex h-7 w-7 items-center justify-center rounded-xl transition-all duration-200",
+                    isActive
+                      ? "bg-ink text-cream-paper"
+                      : "bg-transparent"
+                  )}
+                  style={
+                    isActive
+                      ? { transform: "scale(1.05)" }
+                      : { transform: "scale(1)" }
+                  }
+                >
+                  <Icon
+                    className="h-[17px] w-[17px]"
+                    strokeWidth={isActive ? 2.2 : 1.75}
+                  />
+                </span>
+
+                {/* Label */}
+                <span
+                  className={cn(
+                    "relative z-10 font-semibold leading-none",
+                    isActive ? "text-ink" : "text-ink-muted"
+                  )}
+                  style={{ fontSize: "9.5px", letterSpacing: "0.02em" }}
+                >
+                  {item.label}
+                </span>
               </Link>
             );
           })}
