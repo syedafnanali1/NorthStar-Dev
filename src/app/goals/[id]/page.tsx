@@ -70,6 +70,7 @@ export default async function GoalDetailPage({ params }: PageProps) {
     <AppLayout contentClassName="max-w-5xl lg:max-w-5xl">
       <GoalDetailView
         goal={goal}
+        currentUserId={user.id}
         circleMembers={circleMembers}
         sharedMemberIds={sharedWith.map((member) => member.userId)}
       />

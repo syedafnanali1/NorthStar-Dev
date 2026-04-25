@@ -12,6 +12,7 @@ import { cn, formatDate, formatUnit, relativeTime } from "@/lib/utils";
 import type { GoalWithDetails } from "@/server/services/goals.service";
 import { MomentModal } from "./moment-modal";
 import { ShareGoalModal } from "./share-goal-modal";
+import { CelebrationModal } from "./celebration-modal";
 
 interface GoalCardProps {
   goal: GoalWithDetails;
@@ -35,11 +36,13 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
   const [savingTask, setSavingTask]       = useState(false);
   const [deleting, setDeleting]           = useState(false);
+  const [celebration, setCelebration]     = useState(false);
+  const [celebrationMsg, setCelebrationMsg] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
   const router  = useRouter();
   const todayKey = format(new Date(), "yyyy-MM-dd");
 
-  // Load today's completed intentions
+  // Load today's completed intentions when expanded
   useEffect(() => {
     if (!expanded) return;
     void fetch(`/api/daily-logs?date=${todayKey}`)
@@ -67,10 +70,24 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
 
   const handleToggleTask = useCallback(async (taskId: string) => {
     if (savingTask) return;
+    const wasCompleted = completedTaskIds.has(taskId);
     const next = new Set(completedTaskIds);
-    next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+    wasCompleted ? next.delete(taskId) : next.add(taskId);
     setCompletedTaskIds(next);
     setSavingTask(true);
+
+    // Show celebration when completing (not unchecking)
+    if (!wasCompleted) {
+      const completed = next.size;
+      const total = goal.tasks.length;
+      if (completed === total) {
+        setCelebrationMsg(`All ${total} intentions done for today!`);
+      } else {
+        setCelebrationMsg(`${completed} of ${total} intentions complete.`);
+      }
+      setCelebration(true);
+    }
+
     try {
       await fetch("/api/daily-logs", {
         method: "POST",
@@ -81,7 +98,7 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
     } finally {
       setSavingTask(false);
     }
-  }, [completedTaskIds, savingTask, todayKey, router]);
+  }, [completedTaskIds, savingTask, todayKey, router, goal.tasks.length]);
 
   const handleDelete = async () => {
     if (!confirm(`Archive "${goal.title}"? You can restore it later from settings.`)) return;
@@ -96,6 +113,10 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
     }
   };
 
+  const handleCardClick = () => {
+    router.push(`/goals/${goal.id}`);
+  };
+
   const todayCompleted = goal.tasks.length > 0
     ? goal.tasks.filter((t) => completedTaskIds.has(t.id)).length
     : null;
@@ -103,8 +124,14 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
   return (
     <>
       <article
+        role="button"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleCardClick(); }}
         className={cn(
-          "overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper transition-all duration-200",
+          "overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper transition-all duration-200 cursor-pointer",
+          "hover:shadow-card-hover hover:border-ink-muted/30",
+          "active:scale-[0.995]",
           expanded ? "shadow-card-hover" : "shadow-[0_2px_8px_rgba(26,23,20,0.06)] lg:shadow-none"
         )}
         style={{ borderLeft: `3px solid ${goal.color}` }}
@@ -179,6 +206,7 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                           exit={{ opacity: 0, scale: 0.95, y: -4 }}
                           transition={{ duration: 0.12 }}
                           className="absolute right-0 top-8 z-20 w-44 overflow-hidden rounded-xl border border-cream-dark bg-cream-paper shadow-card-hover"
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <Link
                             href={`/goals/${goal.id}`}
@@ -194,7 +222,7 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                             className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-sm text-ink hover:bg-cream transition-colors"
                           >
                             <UserPlus className="h-3.5 w-3.5 text-ink-muted" />
-                            Add to circle
+                            Add to Circle
                           </button>
                           <div className="my-1 border-t border-cream-dark" />
                           <button
@@ -204,7 +232,7 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                             className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-sm text-rose hover:bg-rose/5 transition-colors"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            {deleting ? "Archiving…" : "Archive goal"}
+                            {deleting ? "Archiving…" : "Delete goal"}
                           </button>
                         </motion.div>
                       )}
@@ -272,16 +300,10 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                   >
                     ✨ Moment
                   </button>
-                  <Link
-                    href={`/goals/${goal.id}`}
-                    className="btn-ghost h-7 rounded-full px-3 text-xs text-ink-muted"
-                  >
-                    Details
-                  </Link>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setExpanded((v) => !v)}
+                  onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
                   className="flex items-center gap-1 text-xs text-ink-muted transition-colors hover:text-ink"
                 >
                   {expanded ? "Less" : "Today"}
@@ -303,6 +325,7 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
               className="overflow-hidden border-t border-cream-dark"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="space-y-4 p-4 sm:p-5">
 
@@ -349,7 +372,11 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-cream-dark px-4 py-3 text-sm text-ink-muted">
-                    <Link href={`/goals/${goal.id}`} className="hover:text-ink transition-colors">
+                    <Link
+                      href={`/goals/${goal.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:text-ink transition-colors"
+                    >
                       + Add daily intentions to start auto-tracking progress →
                     </Link>
                   </div>
@@ -375,9 +402,10 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                     </div>
                     <Link
                       href={`/goals/${goal.id}`}
+                      onClick={(e) => e.stopPropagation()}
                       className="mt-2 flex items-center text-xs text-ink-muted transition-colors hover:text-ink"
                     >
-                      See all in Group Details →
+                      See full story thread →
                     </Link>
                   </div>
                 )}
@@ -410,6 +438,12 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
         onClose={() => setShareOpen(false)}
         circleMembers={circleMembers}
         sharedMemberIds={[]}
+      />
+      <CelebrationModal
+        isOpen={celebration}
+        onClose={() => setCelebration(false)}
+        title="Great job!"
+        message={celebrationMsg}
       />
     </>
   );

@@ -23,6 +23,7 @@ import { db } from "@/lib/db";
 import { authEmailService } from "@/lib/email/auth";
 import { getAppUrl } from "@/lib/app-url";
 import {
+  isEmailDeliveryConfigured,
   isFacebookOAuthAvailable,
   isGoogleOAuthConfigured,
 } from "@/lib/env-checks";
@@ -37,6 +38,32 @@ const facebookConfigured = isFacebookOAuthAvailable(
   process.env["FACEBOOK_CLIENT_ID"],
   process.env["FACEBOOK_CLIENT_SECRET"]
 );
+
+const stepUpScopeRaw = process.env["AUTH_STEP_UP_SCOPE"]?.trim().toLowerCase() ?? "all";
+const stepUpScope =
+  stepUpScopeRaw === "all" || stepUpScopeRaw === "admin" || stepUpScopeRaw === "off"
+    ? stepUpScopeRaw
+    : "all";
+
+if (stepUpScopeRaw !== stepUpScope) {
+  console.warn(
+    `[auth] Invalid AUTH_STEP_UP_SCOPE="${stepUpScopeRaw}". Falling back to "all".`
+  );
+}
+
+const stepUpAdminEmails = new Set(
+  (process.env["AUTH_STEP_UP_ADMIN_EMAILS"] ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => normalizeEmail(value))
+);
+
+if (stepUpScope === "admin" && stepUpAdminEmails.size === 0) {
+  console.warn(
+    "[auth] AUTH_STEP_UP_SCOPE=admin but AUTH_STEP_UP_ADMIN_EMAILS is empty. OAuth step-up is disabled for all users."
+  );
+}
 
 if (!googleConfigured) {
   console.warn("[auth] Google OAuth is not configured. Google sign-in is disabled.");
@@ -142,6 +169,14 @@ if (!process.env["DATABASE_URL"]) {
   );
 }
 
+function shouldEnforceOauthStepUp(email: string): boolean {
+  if (stepUpScope === "off") return false;
+  if (stepUpScope === "admin") {
+    return stepUpAdminEmails.has(normalizeEmail(email));
+  }
+  return true;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: authAdapter,
 
@@ -166,6 +201,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (!user.id || !user.email) {
         return false;
+      }
+
+      if (!shouldEnforceOauthStepUp(user.email)) {
+        return true;
+      }
+
+      if (
+        !isEmailDeliveryConfigured(
+          process.env["RESEND_API_KEY"],
+          process.env["EMAIL_FROM"]
+        )
+      ) {
+        console.warn("[auth] oauth step-up bypassed: email delivery is not configured", {
+          userId: user.id,
+          email: user.email,
+          provider: account.provider,
+          stepUpScope,
+        });
+        return true;
       }
 
       const now = new Date();

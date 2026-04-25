@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -73,50 +73,16 @@ export function DashboardSidecar({
     .filter((tip) => tip.length > 0)
     .slice(0, 3);
 
-  /* â”€â”€ Desktop right-panel variant â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── Desktop right-panel variant ── */
   if (variant === "desktop") {
     return (
       <aside className="min-w-0 space-y-4">
-        {/* Constellation */}
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="section-label">Constellation</p>
-            <div className="flex gap-1">
-              {RANGE_OPTIONS.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setActiveRange(option.key)}
-                  className={cn(
-                    "inline-flex min-h-[22px] items-center rounded-full border px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-[0.08em] transition-all",
-                    activeRange === option.key
-                      ? "border-gold bg-gold text-ink"
-                      : "border-white/10 bg-transparent text-white/40 hover:border-white/20 hover:text-white/60"
-                  )}
-                >
-                  {option.key}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-[1rem] border border-[#2A2522] bg-[#171411] p-3.5 text-white shadow-[0_18px_46px_rgba(26,23,20,0.18)]">
-            <div className="overflow-hidden rounded-[0.75rem] border border-white/8 bg-[#100d0a]">
-              <div className="aspect-[11/8] bg-[radial-gradient(circle_at_top,_rgba(232,201,122,0.18),_rgba(16,13,10,0.98)_52%)]">
-                <ConstellationCanvas data={selectedPoints} />
-              </div>
-            </div>
-            <p className="mt-3 text-[0.6875rem] text-[#C9B68D]/70">
-              {activeDays} active Â· {perfectDays} perfect Â· last {selectedRange.key.toLowerCase()}
-            </p>
-          </div>
-        </section>
-
+        {/* ── Insights (was "Patterns & Suggestions") — shown FIRST ── */}
         <section>
           <div className="overflow-hidden rounded-[1rem] border border-[#2A2522] bg-[#171411] p-3.5 text-white shadow-[0_18px_46px_rgba(26,23,20,0.18)]">
             <div className="mb-3 flex items-center justify-between gap-2">
               <p className="section-label" style={{ color: "rgba(199,175,122,0.72)" }}>
-                Patterns &amp; Suggestions
+                Insights
               </p>
               <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[0.625rem] text-[#D7C299]">
                 {tasks.length > 0 ? `${completedSet.size}/${tasks.length}` : "No plan"}
@@ -126,19 +92,19 @@ export function DashboardSidecar({
             <div className="grid grid-cols-2 gap-2">
               {[
                 {
-                  label: "Consistency",
+                  label: "Steady",
                   value: patternInsights ? `${patternInsights.consistencyScore}%` : `${completionPercent}%`,
                 },
                 {
-                  label: "Follow-through",
+                  label: "Commit",
                   value: patternInsights ? `${patternInsights.followThroughScore}%` : `${completionPercent}%`,
                 },
                 {
-                  label: "Daily load",
+                  label: "Load",
                   value: patternInsights ? `${patternInsights.adaptiveDailyTarget}` : `${tasks.length}`,
                 },
                 {
-                  label: "Done today",
+                  label: "Today",
                   value: tasks.length > 0 ? `${completionPercent}%` : "—",
                 },
               ].map((item) => (
@@ -155,7 +121,7 @@ export function DashboardSidecar({
             </div>
 
             <p className="mt-3 text-[0.6875rem] text-[#C9B68D]/80">
-              Best check-in window:{" "}
+              Best window:{" "}
               <span className="font-semibold text-[#F3E7CF]">
                 {patternInsights?.bestCheckInWindow ?? "Build 3+ logs to unlock"}
               </span>
@@ -188,7 +154,43 @@ export function DashboardSidecar({
             </Link>
           </div>
         </section>
-        {/* Circle Check-ins */}
+
+        {/* ── Constellation — shown SECOND ── */}
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="section-label">Constellation</p>
+            <div className="flex gap-1">
+              {RANGE_OPTIONS.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setActiveRange(option.key)}
+                  className={cn(
+                    "inline-flex min-h-[22px] items-center rounded-full border px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-[0.08em] transition-all",
+                    activeRange === option.key
+                      ? "border-gold bg-gold text-ink"
+                      : "border-white/10 bg-transparent text-white/40 hover:border-white/20 hover:text-white/60"
+                  )}
+                >
+                  {option.key}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-[1rem] border border-[#2A2522] bg-[#171411] p-3.5 text-white shadow-[0_18px_46px_rgba(26,23,20,0.18)]">
+            <div className="overflow-hidden rounded-[0.75rem] border border-white/8 bg-[#100d0a]">
+              <div className="aspect-[11/8] bg-[radial-gradient(circle_at_top,_rgba(232,201,122,0.18),_rgba(16,13,10,0.98)_52%)]">
+                <ConstellationCanvas data={selectedPoints} />
+              </div>
+            </div>
+            <p className="mt-3 text-[0.6875rem] text-[#C9B68D]/70">
+              {activeDays} active · {perfectDays} perfect · last {selectedRange.key.toLowerCase()}
+            </p>
+          </div>
+        </section>
+
+        {/* ── Circle ── */}
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="section-label">Circle</p>
@@ -211,10 +213,10 @@ export function DashboardSidecar({
             ) : (
               circleFeed.map((post) => {
                 const reactions = [
-                  { emoji: "ðŸ”¥", count: post.reactionCounts["ðŸ”¥"] ?? 0 },
-                  { emoji: "ðŸ’ª", count: post.reactionCounts["ðŸ’ª"] ?? 0 },
-                  { emoji: "ðŸ’™", count: post.reactionCounts["ðŸ’™"] ?? 0 },
-                  { emoji: "âœ¨", count: post.reactionCounts["âœ¨"] ?? 0 },
+                  { emoji: "🔥", count: post.reactionCounts["🔥"] ?? 0 },
+                  { emoji: "💪", count: post.reactionCounts["💪"] ?? 0 },
+                  { emoji: "💙", count: post.reactionCounts["💙"] ?? 0 },
+                  { emoji: "✨", count: post.reactionCounts["✨"] ?? 0 },
                 ];
 
                 return (
@@ -271,47 +273,13 @@ export function DashboardSidecar({
     );
   }
 
-  /* â”€â”€ On-page variant (mobile / full-page sidecar) â”€â”€â”€â”€â”€â”€â”€ */
+  /* ── On-page variant (mobile / full-page sidecar) ── */
   return (
     <aside className={cn("min-w-0 space-y-5", "xl:sticky xl:top-24")}>
-      {/* Constellation */}
-      <section className="panel-shell overflow-hidden p-5 sm:p-6">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-xl font-serif font-semibold text-ink">Constellation</h2>
-          <div className="flex flex-wrap gap-1.5">
-            {RANGE_OPTIONS.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => setActiveRange(option.key)}
-                className={cn(
-                  "h-7 rounded-full border px-2.5 text-xs font-semibold transition-all",
-                  activeRange === option.key
-                    ? "border-ink bg-ink text-cream-paper"
-                    : "border-cream-dark bg-cream-paper/60 text-ink-muted hover:border-ink-muted hover:text-ink"
-                )}
-              >
-                {option.key}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#100d0a] p-2.5">
-          <div className="aspect-[16/10] rounded-[1.25rem] bg-[radial-gradient(circle_at_top,_rgba(232,201,122,0.2),_rgba(16,13,10,0.98)_52%)]">
-            <ConstellationCanvas data={selectedPoints} />
-          </div>
-        </div>
-
-        <p className="mt-3 text-sm text-ink-muted">
-          {activeDays} active Â· {perfectDays} perfect in the last {selectedRange.key.toLowerCase()}
-        </p>
-      </section>
-
-      {/* Patterns + suggestions */}
+      {/* ── Insights — shown FIRST ── */}
       <section className="panel-shell p-5 sm:p-6">
         <div className="mb-3.5 flex items-center justify-between gap-3">
-          <h2 className="text-xl font-serif font-semibold text-ink">Patterns &amp; Suggestions</h2>
+          <h2 className="text-xl font-serif font-semibold text-ink">Insights</h2>
           <span className="rounded-full border border-cream-dark bg-cream-paper px-2.5 py-1 text-xs font-mono text-ink-muted">
             {tasks.length > 0 ? `${completedSet.size}/${tasks.length}` : "No plan"}
           </span>
@@ -320,19 +288,19 @@ export function DashboardSidecar({
         <div className="grid grid-cols-2 gap-2.5">
           {[
             {
-              label: "Consistency",
+              label: "Steady",
               value: patternInsights ? `${patternInsights.consistencyScore}%` : `${completionPercent}%`,
             },
             {
-              label: "Follow-through",
+              label: "Commit",
               value: patternInsights ? `${patternInsights.followThroughScore}%` : `${completionPercent}%`,
             },
             {
-              label: "Daily load",
+              label: "Load",
               value: patternInsights ? `${patternInsights.adaptiveDailyTarget}` : `${tasks.length}`,
             },
             {
-              label: "Done today",
+              label: "Today",
               value: tasks.length > 0 ? `${completionPercent}%` : "—",
             },
           ].map((item) => (
@@ -349,7 +317,7 @@ export function DashboardSidecar({
         </div>
 
         <p className="mt-3 text-[0.8125rem] text-ink-muted">
-          Best check-in window:{" "}
+          Best window:{" "}
           <span className="font-semibold text-ink">
             {patternInsights?.bestCheckInWindow ?? "Build 3+ logs to unlock"}
           </span>
@@ -381,7 +349,42 @@ export function DashboardSidecar({
           Open Daily Log
         </Link>
       </section>
-      {/* Circle Check-ins */}
+
+      {/* ── Constellation — shown SECOND ── */}
+      <section className="panel-shell overflow-hidden p-5 sm:p-6">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-serif font-semibold text-ink">Constellation</h2>
+          <div className="flex flex-wrap gap-1.5">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setActiveRange(option.key)}
+                className={cn(
+                  "h-7 rounded-full border px-2.5 text-xs font-semibold transition-all",
+                  activeRange === option.key
+                    ? "border-ink bg-ink text-cream-paper"
+                    : "border-cream-dark bg-cream-paper/60 text-ink-muted hover:border-ink-muted hover:text-ink"
+                )}
+              >
+                {option.key}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#100d0a] p-2.5">
+          <div className="aspect-[16/10] rounded-[1.25rem] bg-[radial-gradient(circle_at_top,_rgba(232,201,122,0.2),_rgba(16,13,10,0.98)_52%)]">
+            <ConstellationCanvas data={selectedPoints} />
+          </div>
+        </div>
+
+        <p className="mt-3 text-sm text-ink-muted">
+          {activeDays} active · {perfectDays} perfect in the last {selectedRange.key.toLowerCase()}
+        </p>
+      </section>
+
+      {/* ── Circle ── */}
       <section className="panel-shell p-5 sm:p-6">
         <div className="mb-3.5 flex items-center justify-between gap-3">
           <h2 className="text-xl font-serif font-semibold text-ink">Circle Check-ins</h2>
@@ -404,10 +407,10 @@ export function DashboardSidecar({
           ) : (
             circleFeed.map((post) => {
               const reactions = [
-                { emoji: "ðŸ”¥", count: post.reactionCounts["ðŸ”¥"] ?? 0 },
-                { emoji: "ðŸ’ª", count: post.reactionCounts["ðŸ’ª"] ?? 0 },
-                { emoji: "ðŸ’™", count: post.reactionCounts["ðŸ’™"] ?? 0 },
-                { emoji: "âœ¨", count: post.reactionCounts["âœ¨"] ?? 0 },
+                { emoji: "🔥", count: post.reactionCounts["🔥"] ?? 0 },
+                { emoji: "💪", count: post.reactionCounts["💪"] ?? 0 },
+                { emoji: "💙", count: post.reactionCounts["💙"] ?? 0 },
+                { emoji: "✨", count: post.reactionCounts["✨"] ?? 0 },
               ];
 
               return (
@@ -430,7 +433,7 @@ export function DashboardSidecar({
                           {post.author?.name ?? "Circle member"}
                         </span>
                         {(post.author?.streak ?? 0) > 0 ? (
-                          <span className="text-xs text-ink-muted">ðŸ”¥ {post.author?.streak}</span>
+                          <span className="text-xs text-ink-muted">🔥 {post.author?.streak}</span>
                         ) : null}
                         <span className="text-xs text-ink-muted">{relativeTime(post.createdAt)}</span>
                       </div>
@@ -468,5 +471,3 @@ export function DashboardSidecar({
     </aside>
   );
 }
-
-
