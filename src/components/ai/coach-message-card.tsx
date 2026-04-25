@@ -2,9 +2,10 @@
 
 // src/components/ai/coach-message-card.tsx
 // Displays an AI coaching message with an animated text reveal and dismiss button.
+// First sentence is shown by default; the rest expands on "See more".
 
 import { useState, useEffect } from "react";
-import { X, Sparkles } from "lucide-react";
+import { X, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils/index";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -44,6 +45,13 @@ function AnimatedText({ text }: { text: string }) {
   );
 }
 
+// Returns the first sentence (or first ~120 chars) as the preview.
+function getPreview(text: string): string {
+  const match = text.match(/^.{30,}?[.!?](?:\s|$)/);
+  if (match) return match[0].trim();
+  return text.length > 120 ? text.slice(0, 117).trimEnd() + "…" : text;
+}
+
 export function CoachMessageCard({
   insightId,
   message,
@@ -52,6 +60,10 @@ export function CoachMessageCard({
   onDismiss,
 }: CoachMessageCardProps) {
   const [dismissing, setDismissing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const preview = getPreview(message);
+  const hasMore = preview.replace(/…$/, "").trimEnd().length < message.trimEnd().length;
 
   // Fire-and-forget mark-as-read on mount
   useEffect(() => {
@@ -70,7 +82,8 @@ export function CoachMessageCard({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-3xl border border-gold/20 bg-ink p-5 transition-all duration-300 sm:p-6",
+        // Always dark background so text-white stays legible in both light and dark themes
+        "relative overflow-hidden rounded-3xl border border-gold/20 bg-[#171411] p-4 transition-all duration-300 sm:p-5",
         dismissing && "scale-95 opacity-0"
       )}
     >
@@ -79,17 +92,17 @@ export function CoachMessageCard({
 
       <div className="pl-4">
         {/* Header row */}
-        <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="mb-2.5 flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-gold" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.32em] text-gold">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-gold">
               AI Coach — {TYPE_LABELS[type] ?? type}
             </span>
           </div>
           <button
             type="button"
             onClick={handleDismiss}
-            className="shrink-0 rounded-full p-1 text-white/30 transition hover:text-white/70"
+            className="shrink-0 rounded-full p-1.5 text-white/30 transition hover:text-white/70 active:scale-90"
             aria-label="Dismiss"
           >
             <X className="h-3.5 w-3.5" />
@@ -103,10 +116,31 @@ export function CoachMessageCard({
           </p>
         ) : null}
 
-        {/* Message with staggered word reveal */}
-        <p className="text-sm leading-6 text-white/85">
-          <AnimatedText text={message} />
+        {/* Message — collapsed shows preview, expanded shows full animated text */}
+        <p className="text-sm leading-[1.65] text-white/80">
+          {expanded ? <AnimatedText text={message} /> : preview}
         </p>
+
+        {/* See more / See less toggle */}
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-2.5 flex items-center gap-1 text-xs font-semibold text-gold/75 transition-colors hover:text-gold active:scale-95"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="h-3 w-3" />
+                See less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" />
+                See more
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

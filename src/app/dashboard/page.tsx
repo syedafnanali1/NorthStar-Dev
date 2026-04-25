@@ -1,4 +1,4 @@
-﻿// src/app/dashboard/page.tsx
+// src/app/dashboard/page.tsx
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireAuthUser } from "@/lib/auth/helpers";
@@ -12,6 +12,9 @@ import Link from "next/link";
 import { MobileSidecarServer } from "@/components/dashboard/mobile-sidecar-server";
 import { aiCoachService } from "@/server/services/ai-coach.service";
 import { CompoundViewButton } from "./compound-view-button";
+import { db } from "@/lib/db";
+import { circleConnections, users } from "@/drizzle/schema";
+import { and, eq, inArray } from "drizzle-orm";
 
 export const metadata: Metadata = {
   title: "Your Goals",
@@ -31,6 +34,30 @@ export default async function DashboardPage() {
   if (!user.hasCompletedOnboarding && goals.length === 0) {
     redirect("/onboarding");
   }
+
+  // Fetch circle members so GoalCards can power the "Add to Circle" share modal
+  const [incoming, outgoing] = await Promise.all([
+    db
+      .select({ otherId: circleConnections.requesterId })
+      .from(circleConnections)
+      .where(and(eq(circleConnections.receiverId, user.id), eq(circleConnections.status, "accepted"))),
+    db
+      .select({ otherId: circleConnections.receiverId })
+      .from(circleConnections)
+      .where(and(eq(circleConnections.requesterId, user.id), eq(circleConnections.status, "accepted"))),
+  ]);
+
+  const connectionIds = [
+    ...incoming.map((c) => c.otherId),
+    ...outgoing.map((c) => c.otherId),
+  ];
+
+  const circleMembers = connectionIds.length > 0
+    ? await db
+        .select({ id: users.id, name: users.name, image: users.image, streak: users.currentStreak })
+        .from(users)
+        .where(inArray(users.id, connectionIds))
+    : [];
 
   const firstName = user.name?.split(" ")[0];
 
@@ -63,13 +90,13 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* â”€â”€ AI Coaching Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── AI Coaching Banner ────────────────────────────────── */}
         {latestInsight ? (
           <AiInsightBanner insight={latestInsight} />
         ) : null}
 
         <MomentumCard momentum={momentum} />
-        <GoalList goals={goals} />
+        <GoalList goals={goals} circleMembers={circleMembers} />
         <MobileSidecarServer userId={user.id} />
       </div>
     </AppLayout>

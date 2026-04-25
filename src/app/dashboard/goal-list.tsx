@@ -28,9 +28,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 interface GoalListProps {
   goals: GoalWithDetails[];
+  circleMembers?: Array<{ id: string; name: string | null; image: string | null; streak: number }>;
 }
 
-export function GoalList({ goals }: GoalListProps) {
+export function GoalList({ goals, circleMembers = [] }: GoalListProps) {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -199,7 +200,7 @@ export function GoalList({ goals }: GoalListProps) {
           ) : (
             <div className="space-y-3 sm:space-y-4">
               {filtered.map((goal) => (
-                <GoalCard key={goal.id} goal={goal} />
+                <GoalCard key={goal.id} goal={goal} circleMembers={circleMembers} />
               ))}
             </div>
           )}

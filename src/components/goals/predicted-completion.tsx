@@ -35,7 +35,7 @@ export function PredictedCompletion({
   const diffDays = Math.abs(daysAhead);
 
   return (
-    <div className="space-y-4 rounded-2xl border border-cream-dark bg-white/75 p-4">
+    <div className="space-y-4 rounded-2xl border border-cream-dark bg-cream-paper p-4">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-muted">
           Pace Prediction
@@ -44,7 +44,7 @@ export function PredictedCompletion({
           className={cn(
             "rounded-full px-2.5 py-1 text-[11px] font-semibold",
             isOnTrack
-              ? "bg-emerald-50 text-emerald-700"
+              ? "bg-sage/10 text-sage"
               : "bg-rose/10 text-rose"
           )}
         >
@@ -84,7 +84,7 @@ export function PredictedCompletion({
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-700",
-                isOnTrack ? "bg-emerald-500" : "bg-rose"
+                isOnTrack ? "bg-sage" : "bg-rose"
               )}
               style={{ width: `${requiredPct}%` }}
             />
@@ -94,8 +94,8 @@ export function PredictedCompletion({
 
       <p className="text-xs leading-5 text-ink-muted">
         {isOnTrack
-          ? `At your current rate you&apos;ll finish in ~${etaLabel} — ${daysAhead > 0 ? `${daysAhead} days ahead of schedule` : "right on schedule"}.`
-          : `At your current rate you&apos;ll finish in ~${etaLabel}, which is ${diffDays} days past your deadline. Pick up to ${requiredDailyRate} ${unit}/day to stay on track.`}
+          ? `At your current rate you'll finish in ~${etaLabel} — ${daysAhead > 0 ? `${daysAhead} days ahead of schedule` : "right on schedule"}.`
+          : `At your current rate you'll finish in ~${etaLabel}, which is ${diffDays} days past your deadline. Pick up to ${requiredDailyRate} ${unit}/day to stay on track.`}
       </p>
     </div>
   );

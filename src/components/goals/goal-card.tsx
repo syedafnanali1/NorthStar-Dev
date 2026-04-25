@@ -193,7 +193,7 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-cream-dark hover:text-ink"
+                      className="flex h-9 w-9 items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-cream-dark hover:text-ink active:scale-90"
                       aria-label="Goal options"
                     >
                       <MoreHorizontal className="h-4 w-4" />

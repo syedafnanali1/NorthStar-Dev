@@ -258,10 +258,10 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
               Momentum Score
             </p>
             <div className="mt-2 flex items-end gap-2">
-              <span className="font-serif text-4xl font-semibold leading-none text-white sm:text-5xl">
+              <span className="font-serif text-[2.5rem] font-semibold leading-none text-white sm:text-5xl">
                 {displayScore}
               </span>
-              <span className="mb-1 font-serif text-base text-white/35">/ 100</span>
+              <span className="mb-1 font-serif text-sm text-white/35 sm:text-base">/ 100</span>
             </div>
             <p className="mt-1.5 font-mono text-xs text-[#E8C97A] sm:text-sm">
               {scoreContext}
@@ -316,18 +316,18 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
             <button
               key={s.label}
               onClick={s.onClick}
-              className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.04] px-3 py-2.5 text-left transition-all hover:bg-white/[0.06] hover:border-white/10 active:scale-[0.97]"
+              className="flex flex-col gap-0.5 rounded-xl border border-white/[0.06] bg-white/[0.04] px-2.5 py-2 text-left transition-all hover:bg-white/[0.06] hover:border-white/10 active:scale-[0.97] sm:px-3 sm:py-2.5"
             >
               <div className="flex items-center gap-0.5">
                 <span className={cn(
-                  "font-serif font-semibold sm:text-lg",
+                  "font-serif font-semibold text-sm sm:text-[1.0625rem]",
                   s.label === "Streak" && momentum.streakDays >= 7 ? "text-[#E8C97A]" : "text-white"
                 )}>
                   {s.value}
                 </span>
-                <span className="text-base leading-none">{s.emoji}</span>
+                <span className="text-sm leading-none sm:text-base">{s.emoji}</span>
               </div>
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-left" style={{ color: "rgba(255,255,255,0.3)" }}>
+              <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-left sm:text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
                 {s.label}
               </span>
             </button>

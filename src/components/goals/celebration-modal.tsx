@@ -68,7 +68,8 @@ export function CelebrationModal({
 
           {/* Toast card */}
           <motion.div
-            className="pointer-events-none fixed bottom-24 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 px-4"
+            className="pointer-events-none fixed left-1/2 z-50 w-full max-w-sm -translate-x-1/2 px-4"
+            style={{ bottom: "calc(max(5.5rem, env(safe-area-inset-bottom, 0px) + 5rem))" }}
             initial={{ opacity: 0, y: 48, scale: 0.88 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.94 }}
