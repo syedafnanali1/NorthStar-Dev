@@ -39,11 +39,11 @@ const facebookConfigured = isFacebookOAuthAvailable(
   process.env["FACEBOOK_CLIENT_SECRET"]
 );
 
-const stepUpScopeRaw = process.env["AUTH_STEP_UP_SCOPE"]?.trim().toLowerCase() ?? "all";
+const stepUpScopeRaw = process.env["AUTH_STEP_UP_SCOPE"]?.trim().toLowerCase() ?? "off";
 const stepUpScope =
   stepUpScopeRaw === "all" || stepUpScopeRaw === "admin" || stepUpScopeRaw === "off"
     ? stepUpScopeRaw
-    : "all";
+    : "off";
 
 if (stepUpScopeRaw !== stepUpScope) {
   console.warn(
@@ -268,6 +268,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       const verifyPath = `/auth/verify-email?mode=signin&provider=${encodeURIComponent(provider)}&email=${encodeURIComponent(user.email)}`;
       const appUrl = getAppUrl();
+      const absoluteVerifyUrl = `${appUrl}${verifyPath}`;
 
       let emailSendSuccess = false;
 
@@ -332,7 +333,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
       }
 
-      return verifyPath;
+      return absoluteVerifyUrl;
     },
 
     async jwt({ token, user, trigger, session }) {
