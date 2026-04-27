@@ -59,13 +59,6 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
       return;
     }
 
-    const registered = searchParams?.get("registered");
-    if (registered === "1") {
-      setServerError("Account created! Sign in with your email and password below.");
-      setServerActionLink(null);
-      return;
-    }
-
     const errorParam = searchParams?.get("error");
     if (errorParam) {
       setServerError(

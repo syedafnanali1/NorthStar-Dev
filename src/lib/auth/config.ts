@@ -39,11 +39,11 @@ const facebookConfigured = isFacebookOAuthAvailable(
   process.env["FACEBOOK_CLIENT_SECRET"]
 );
 
-const stepUpScopeRaw = process.env["AUTH_STEP_UP_SCOPE"]?.trim().toLowerCase() ?? "off";
+const stepUpScopeRaw = process.env["AUTH_STEP_UP_SCOPE"]?.trim().toLowerCase() ?? "all";
 const stepUpScope =
   stepUpScopeRaw === "all" || stepUpScopeRaw === "admin" || stepUpScopeRaw === "off"
     ? stepUpScopeRaw
-    : "off";
+    : "all";
 
 if (stepUpScopeRaw !== stepUpScope) {
   console.warn(
@@ -180,12 +180,6 @@ function shouldEnforceOauthStepUp(email: string): boolean {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: authAdapter,
 
-  // Required for Vercel and other reverse proxies — trusts x-forwarded-host
-  // so NextAuth uses the correct public URL for PKCE/state cookie validation.
-  trustHost: true,
-
-  secret: process.env["AUTH_SECRET"] ?? process.env["NEXTAUTH_SECRET"],
-
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60,
@@ -274,7 +268,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       const verifyPath = `/auth/verify-email?mode=signin&provider=${encodeURIComponent(provider)}&email=${encodeURIComponent(user.email)}`;
       const appUrl = getAppUrl();
-      const absoluteVerifyUrl = `${appUrl}${verifyPath}`;
 
       let emailSendSuccess = false;
 
@@ -339,7 +332,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
       }
 
-      return absoluteVerifyUrl;
+      return verifyPath;
     },
 
     async jwt({ token, user, trigger, session }) {

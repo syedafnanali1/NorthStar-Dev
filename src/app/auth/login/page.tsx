@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { redirectIfAuthenticated } from "@/lib/auth/helpers";
 import { getAuthConfigStatus } from "@/lib/env-checks";
 import { LoginForm } from "./login-form";
-import { StarField } from "./star-field";
 
 export const metadata: Metadata = {
   title: "Sign In",
@@ -15,7 +14,22 @@ export default async function LoginPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#0E0C0A]">
-      <StarField />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {Array.from({ length: 70 }).map((_, index) => (
+          <div
+            key={index}
+            className="absolute rounded-full bg-white animate-twinkle"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              width: Math.random() > 0.7 ? "2px" : "1px",
+              height: Math.random() > 0.7 ? "2px" : "1px",
+              opacity: Math.random() * 0.65,
+              animationDelay: `${Math.random() * 3}s`,
+            }}
+          />
+        ))}
+      </div>
 
       <div className="relative z-10 flex min-h-screen items-stretch justify-center lg:items-center lg:p-4">
         <div className="mobile-sheet w-full bg-[#171411]/96 px-5 py-6 shadow-[0_30px_90px_rgba(0,0,0,0.35)] backdrop-blur-xl lg:max-w-[460px] lg:border lg:border-white/10 lg:px-7 lg:py-8">
