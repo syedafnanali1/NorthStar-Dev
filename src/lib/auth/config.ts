@@ -329,14 +329,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       if (!emailSendSuccess) {
-        console.warn("[auth] google oauth sign-in verification email not sent - user needs to check spam or resend", {
-          userId: user.id,
-          email: user.email,
-          provider,
-        });
+        console.warn(
+          "[auth] step-up email failed to send — allowing sign-in to prevent lockout",
+          { userId: user.id, email: user.email, provider }
+        );
+        return true;
       }
 
-      return verifyPath;
+      return `${appUrl}${verifyPath}`;
     },
 
     async jwt({ token, user, trigger, session }) {
