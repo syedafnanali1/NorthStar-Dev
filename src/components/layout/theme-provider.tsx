@@ -19,7 +19,6 @@ export function useTheme() {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [dark, setDark] = useState(false);
-  const [loaded, setLoaded] = useState(false);
 
   // On mount: fetch user's saved preference
   useEffect(() => {
@@ -29,8 +28,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const pref = data?.user?.darkMode ?? false;
         setDark(pref);
         applyClass(pref);
-      })
-      .finally(() => setLoaded(true));
+      });
   }, []);
 
   const toggle = useCallback(() => {
@@ -46,10 +44,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Prevent flash: hide content until preference is loaded
   return (
     <ThemeContext.Provider value={{ dark, toggle }}>
-      <div style={loaded ? undefined : { visibility: "hidden" }}>{children}</div>
+      {children}
     </ThemeContext.Provider>
   );
 }
