@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,6 +9,13 @@ import { createGoalSchema, type CreateGoalInput } from "@/lib/validators/goals";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import { DecomposeModal, type DecomposedGoal } from "@/components/ai/decompose-modal";
+import {
+  computeCadenceTarget,
+  ensureSmartGoalTasks,
+  inferGoalSmartSuggestion,
+  makeAutoTaskSuggestion,
+  type MoneyCadence,
+} from "@/lib/goal-intelligence";
 
 const CATEGORIES = [
   {
@@ -73,6 +80,8 @@ export function NewGoalWizard() {
   const [tasks, setTasks] = useState<{ text: string; incrementValue: string }[]>([]);
   const [newTask, setNewTask] = useState("");
   const [newTaskIncrement, setNewTaskIncrement] = useState("");
+  const [smartAmount, setSmartAmount] = useState("");
+  const [moneyCadence, setMoneyCadence] = useState<MoneyCadence>("daily");
   const [milestoneInput, setMilestoneInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [decomposeOpen, setDecomposeOpen] = useState(false);
@@ -96,6 +105,73 @@ export function NewGoalWizard() {
 
   const selectedCategory = watch("category");
   const selectedColor = watch("color");
+  const watchedTitle = watch("title") ?? "";
+  const watchedWhy = watch("why") ?? "";
+  const watchedUnit = watch("unit") ?? "";
+  const watchedStartDate = watch("startDate") ?? "";
+  const watchedEndDate = watch("endDate") ?? "";
+  const watchedTargetValue = watch("targetValue");
+
+  const smartSuggestion = useMemo(
+    () => inferGoalSmartSuggestion(watchedTitle, watchedWhy, selectedCategory ?? null),
+    [watchedTitle, watchedWhy, selectedCategory]
+  );
+
+  const smartAmountNumber = useMemo(() => {
+    const parsed = Number(smartAmount);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [smartAmount]);
+
+  useEffect(() => {
+    if (!selectedCategory && watchedTitle.trim().length >= 3) {
+      setValue("category", smartSuggestion.category);
+      setValue(
+        "color",
+        CATEGORIES.find((c) => c.value === smartSuggestion.category)?.color ?? "#C4963A"
+      );
+    }
+    if (!watchedUnit && smartSuggestion.unit) {
+      setValue("unit", smartSuggestion.unit);
+    }
+  }, [
+    selectedCategory,
+    setValue,
+    smartSuggestion.category,
+    smartSuggestion.unit,
+    watchedTitle,
+    watchedUnit,
+  ]);
+
+  const addSmartTask = () => {
+    const suggestedTask = makeAutoTaskSuggestion({
+      title: watchedTitle || "this goal",
+      intent: smartSuggestion.intent,
+      amount: smartAmountNumber,
+      unit: watchedUnit || smartSuggestion.unit,
+      cadence: moneyCadence,
+      startDate: watchedStartDate || null,
+      endDate: watchedEndDate || null,
+      targetValue:
+        typeof watchedTargetValue === "number" && Number.isFinite(watchedTargetValue)
+          ? watchedTargetValue
+          : null,
+    });
+
+    if (!suggestedTask.text) return;
+
+    setTasks((current) => {
+      if (current.some((task) => task.text.toLowerCase() === suggestedTask.text.toLowerCase())) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          text: suggestedTask.text,
+          incrementValue: suggestedTask.incrementValue ? String(suggestedTask.incrementValue) : "",
+        },
+      ].slice(0, 10);
+    });
+  };
 
   const addTask = () => {
     if (newTask.trim() && tasks.length < 10) {
@@ -123,6 +199,12 @@ export function NewGoalWizard() {
     if (goal.suggestedTasks.length > 0) {
       setTasks(goal.suggestedTasks.map((text) => ({ text, incrementValue: "" })));
     }
+    if (goal.targetValue !== null) {
+      setSmartAmount(String(goal.targetValue));
+    }
+    if (goal.category === "finance") {
+      setMoneyCadence("daily");
+    }
     toast("Goal pre-filled by AI ✨");
   };
 
@@ -134,17 +216,53 @@ export function NewGoalWizard() {
         .map((milestone) => milestone.trim())
         .filter(Boolean);
 
+      const resolvedCategory = data.category ?? smartSuggestion.category;
+      const manualTargetValue =
+        typeof data.targetValue === "number" && Number.isFinite(data.targetValue) && data.targetValue > 0
+          ? data.targetValue
+          : undefined;
+      const computedMoneyTarget =
+        smartSuggestion.intent === "money_saving" && smartAmountNumber
+          ? computeCadenceTarget({
+              amount: smartAmountNumber,
+              cadence: moneyCadence,
+              startDate: data.startDate ?? watchedStartDate ?? null,
+              endDate: data.endDate ?? watchedEndDate ?? null,
+            })
+          : null;
+      const resolvedTargetValue =
+        manualTargetValue ??
+        (smartSuggestion.intent === "weight_loss" ? smartAmountNumber ?? undefined : undefined) ??
+        (computedMoneyTarget ?? undefined);
+      const resolvedUnit =
+        data.unit?.trim() || watchedUnit || smartSuggestion.unit || undefined;
+
+      const preparedTasks = ensureSmartGoalTasks({
+        title: data.title,
+        intent: smartSuggestion.intent,
+        unit: resolvedUnit ?? null,
+        amount: smartAmountNumber ?? resolvedTargetValue ?? null,
+        cadence: moneyCadence,
+        startDate: data.startDate ?? watchedStartDate ?? null,
+        endDate: data.endDate ?? watchedEndDate ?? null,
+        targetValue: resolvedTargetValue ?? null,
+        tasks,
+      });
+
       const response = await fetch("/api/goals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...data,
+          category: resolvedCategory,
+          unit: resolvedUnit,
+          targetValue: resolvedTargetValue,
           milestones,
-          tasks: tasks.map((t) => ({
-          text: t.text,
-          isRepeating: true,
-          incrementValue: t.incrementValue ? parseFloat(t.incrementValue) : undefined,
-        })),
+          tasks: preparedTasks.map((task) => ({
+            text: task.text,
+            isRepeating: true,
+            incrementValue: task.incrementValue,
+          })),
         }),
       });
 
@@ -287,14 +405,20 @@ export function NewGoalWizard() {
             <button
               type="button"
               onClick={() => {
-                if (!selectedCategory) {
-                  toast("Please select a category", "error");
-                  return;
-                }
                 const title = watch("title");
                 if (!title || title.length < 3) {
                   toast("Please enter a goal title", "error");
                   return;
+                }
+                if (!selectedCategory) {
+                  setValue("category", smartSuggestion.category);
+                  setValue(
+                    "color",
+                    CATEGORIES.find((c) => c.value === smartSuggestion.category)?.color ?? "#C4963A"
+                  );
+                }
+                if (!watch("unit") && smartSuggestion.unit) {
+                  setValue("unit", smartSuggestion.unit);
                 }
                 setStep(2);
               }}
@@ -317,26 +441,121 @@ export function NewGoalWizard() {
             </p>
           </div>
 
+          <div className="rounded-2xl border border-gold/25 bg-gold/5 px-4 py-3 text-sm text-ink-muted">
+            <p className="font-semibold text-ink">
+              Smart detection:{" "}
+              {smartSuggestion.intent === "reading"
+                ? "Reading goal"
+                : smartSuggestion.intent === "weight_loss"
+                ? "Weight goal"
+                : smartSuggestion.intent === "money_saving"
+                ? "Money goal"
+                : "Custom goal"}
+            </p>
+            <p className="mt-1">
+              {smartSuggestion.intent === "reading"
+                ? "We will track this in pages and auto-log your page amount when intentions are completed."
+                : smartSuggestion.intent === "weight_loss"
+                ? "Choose unit and target loss. We will auto-distribute progress over your selected timeline."
+                : smartSuggestion.intent === "money_saving"
+                ? "Choose amount + cadence. We will auto-calculate target progress when you set a deadline."
+                : "You can still set a custom metric and unit."}
+            </p>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <label className="form-label">Target Amount</label>
+              <label className="form-label">
+                {smartSuggestion.intent === "reading"
+                  ? smartSuggestion.quantityLabel
+                  : smartSuggestion.intent === "weight_loss"
+                  ? smartSuggestion.quantityLabel
+                  : smartSuggestion.intent === "money_saving"
+                  ? smartSuggestion.quantityLabel
+                  : "Target Amount"}
+              </label>
               <input
-                {...register("targetValue")}
+                value={
+                  smartSuggestion.intent === "generic"
+                    ? (watchedTargetValue ?? "")
+                    : smartAmount
+                }
+                onChange={(event) => {
+                  if (smartSuggestion.intent === "generic") {
+                    setValue("targetValue", event.target.value ? Number(event.target.value) : undefined);
+                    return;
+                  }
+                  setSmartAmount(event.target.value);
+                  if (smartSuggestion.intent === "weight_loss" && event.target.value) {
+                    setValue("targetValue", Number(event.target.value));
+                  }
+                }}
                 type="number"
                 min="0"
+                step="any"
                 placeholder="42.2"
                 className={cn("form-input min-h-[52px] rounded-2xl", errors.targetValue && "border-rose")}
               />
             </div>
+
             <div className="space-y-2">
               <label className="form-label">Unit</label>
-              <input
-                {...register("unit")}
-                placeholder="km"
-                className="form-input min-h-[52px] rounded-2xl"
-              />
+              {smartSuggestion.intent === "reading" ? (
+                <input
+                  value="pages"
+                  readOnly
+                  className="form-input min-h-[52px] rounded-2xl bg-cream"
+                />
+              ) : smartSuggestion.intent === "money_saving" ? (
+                <select
+                  value={watchedUnit || "$"}
+                  onChange={(event) => setValue("unit", event.target.value)}
+                  className="form-input min-h-[52px] rounded-2xl"
+                >
+                  {smartSuggestion.unitOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : smartSuggestion.intent === "weight_loss" ? (
+                <select
+                  value={watchedUnit || smartSuggestion.unit || "lb"}
+                  onChange={(event) => setValue("unit", event.target.value)}
+                  className="form-input min-h-[52px] rounded-2xl"
+                >
+                  {smartSuggestion.unitOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  {...register("unit")}
+                  placeholder="km"
+                  className="form-input min-h-[52px] rounded-2xl"
+                />
+              )}
             </div>
           </div>
+
+          {smartSuggestion.intent === "money_saving" ? (
+            <div className="space-y-2">
+              <label className="form-label">Cadence</label>
+              <select
+                value={moneyCadence}
+                onChange={(event) => setMoneyCadence(event.target.value as MoneyCadence)}
+                className="form-input min-h-[52px] rounded-2xl"
+              >
+                {smartSuggestion.cadenceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <label className="form-label">Starting Point</label>
@@ -439,6 +658,40 @@ export function NewGoalWizard() {
             </p>
           </div>
 
+          {tasks.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-cream-dark bg-cream px-4 py-3 text-sm text-ink-muted">
+              <p className="font-semibold text-ink">Quick start intention</p>
+              <p className="mt-1">
+                Auto-suggest:{" "}
+                <span className="font-medium text-ink">
+                  {
+                    makeAutoTaskSuggestion({
+                      title: watchedTitle || "this goal",
+                      intent: smartSuggestion.intent,
+                      amount: smartAmountNumber,
+                      unit: watchedUnit || smartSuggestion.unit,
+                      cadence: moneyCadence,
+                      startDate: watchedStartDate || null,
+                      endDate: watchedEndDate || null,
+                      targetValue:
+                        typeof watchedTargetValue === "number" && Number.isFinite(watchedTargetValue)
+                          ? watchedTargetValue
+                          : null,
+                    }).text
+                  }
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={addSmartTask}
+                className="mt-2 inline-flex items-center gap-2 rounded-xl border border-cream-dark bg-white/80 px-3 py-2 text-xs font-semibold text-ink transition hover:border-ink-muted"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Use smart default
+              </button>
+            </div>
+          ) : null}
+
           <div className="space-y-3">
             {tasks.map((task, index) => (
               <div
@@ -452,7 +705,7 @@ export function NewGoalWizard() {
                 <span className="flex-1 text-sm text-ink">{task.text}</span>
                 {task.incrementValue && (
                   <span className="rounded-full border border-cream-dark bg-cream px-2 py-0.5 text-xs font-mono text-ink-muted">
-                    +{task.incrementValue} {watch("unit") ?? ""}
+                    +{task.incrementValue} {watchedUnit || smartSuggestion.unit || ""}
                   </span>
                 )}
                 <button
@@ -487,7 +740,7 @@ export function NewGoalWizard() {
                   type="number"
                   min="0"
                   step="any"
-                  placeholder={watch("unit") ? `+${watch("unit") ?? ""}` : "Amount"}
+                  placeholder={watchedUnit ? `+${watchedUnit}` : "Amount"}
                   className="form-input min-h-[52px] w-28 rounded-2xl text-center"
                   title="How much does completing this task add to your goal progress?"
                 />

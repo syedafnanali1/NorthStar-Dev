@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import type { NextRequest } from "next/server";
 import { aiCoachService } from "@/server/services/ai-coach.service";
+import { normalizeDecomposedGoalOutput } from "@/lib/goal-intelligence";
 
 const bodySchema = z.object({
   description: z.string().min(10).max(500),
@@ -29,9 +30,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const goal = await aiCoachService.decomposeNaturalLanguageGoal(
+    const rawGoal = await aiCoachService.decomposeNaturalLanguageGoal(
       parsed.data.description
     );
+    const goal = normalizeDecomposedGoalOutput(rawGoal, parsed.data.description);
     return NextResponse.json({ goal });
   } catch (err) {
     console.error("[POST /api/ai/decompose]", err);

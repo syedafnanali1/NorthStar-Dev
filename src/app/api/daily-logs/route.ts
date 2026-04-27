@@ -124,11 +124,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    const prevIds = new Set(existing?.completedTaskIds ?? []);
+    const nextIds = new Set(completedTaskIds ?? []);
+    const newlyCompleted = Array.from(nextIds).filter((id) => !prevIds.has(id));
+    const newlyUncompleted = Array.from(prevIds).filter((id) => !nextIds.has(id));
+    const changedTaskIds = Array.from(new Set([...newlyCompleted, ...newlyUncompleted]));
+
     // Smart auto-tracking: increment goal progress for newly completed tasks
-    if (completedTaskIds && completedTaskIds.length > 0) {
-      const prevIds = new Set(existing?.completedTaskIds ?? []);
-      const newlyCompleted = completedTaskIds.filter((id) => !prevIds.has(id));
-      if (newlyCompleted.length > 0) {
+    if (changedTaskIds.length > 0) {
         // Look up each task's metadata
         const taskRows = await db
           .select({
@@ -138,7 +141,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             incrementValue: goalTasks.incrementValue,
           })
           .from(goalTasks)
-          .where(inArray(goalTasks.id, newlyCompleted));
+          .where(inArray(goalTasks.id, changedTaskIds));
 
         const goalIds = Array.from(new Set(taskRows.map((task) => task.goalId)));
         const goalRows =
@@ -157,9 +160,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         const goalById = new Map(goalRows.map((goal) => [goal.id, goal]));
 
-        // Sum increment amounts by goalId. If a task has no increment value yet,
-        // infer it from task text + goal context and persist that learned value.
-        const goalIncrements = new Map<string, number>();
+        const newlyCompletedSet = new Set(newlyCompleted);
+        // Sum signed increment deltas by goalId.
+        const goalDeltas = new Map<string, number>();
         const learnedTaskIncrements: Array<{ taskId: string; value: number }> = [];
         for (const t of taskRows) {
           const goal = goalById.get(t.goalId);
@@ -174,12 +177,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 })
               : null;
           const amount = t.incrementValue ?? inferredAmount ?? 1;
+          const direction = newlyCompletedSet.has(t.id) ? 1 : -1;
 
           if (t.incrementValue == null && inferredAmount != null) {
             learnedTaskIncrements.push({ taskId: t.id, value: inferredAmount });
           }
 
-          goalIncrements.set(t.goalId, (goalIncrements.get(t.goalId) ?? 0) + amount);
+          goalDeltas.set(t.goalId, (goalDeltas.get(t.goalId) ?? 0) + direction * amount);
         }
 
         for (const learned of learnedTaskIncrements) {
@@ -190,14 +194,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
 
         // Increment ALL goals (both habit and metric) — smart tracking for all
-        for (const [goalId, amount] of goalIncrements) {
+        for (const [goalId, delta] of goalDeltas) {
+          if (!Number.isFinite(delta) || delta === 0) continue;
+          const nextValueExpr = sql`GREATEST(0, ${goals.currentValue} + ${delta})`;
           await db
             .update(goals)
-            .set({ currentValue: sql`current_value + ${amount}` })
+            .set({
+              currentValue: nextValueExpr,
+              isCompleted: sql`CASE WHEN ${goals.targetValue} IS NOT NULL THEN ${nextValueExpr} >= ${goals.targetValue} ELSE ${goals.isCompleted} END`,
+              completedAt: sql`CASE WHEN ${goals.targetValue} IS NOT NULL AND ${nextValueExpr} >= ${goals.targetValue} THEN COALESCE(${goals.completedAt}, NOW()) WHEN ${goals.targetValue} IS NOT NULL THEN NULL ELSE ${goals.completedAt} END`,
+              updatedAt: new Date(),
+            })
             .where(and(eq(goals.id, goalId), eq(goals.userId, userId)));
         }
 
-        for (const goalId of goalIncrements.keys()) {
+        for (const goalId of goalDeltas.keys()) {
           void aiCoachService
             .maybeCreatePredictionInsightForGoal(userId, goalId, {
               cooldownHours: 24,
@@ -205,12 +216,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             })
             .catch(() => null);
         }
-      }
     }
 
-    // Award XP for check-in, plus per completed task
+    // Award XP for check-in, plus each newly completed task.
     void xpService.awardXP(userId, "post_checkin");
-    const taskCount = completedTaskIds?.length ?? 0;
+    const taskCount = newlyCompleted.length;
     for (let i = 0; i < taskCount; i++) {
       void xpService.awardXP(userId, "complete_task");
     }

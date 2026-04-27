@@ -41,7 +41,7 @@ export const createGoalSchema = z.object({
   // Visibility
   isPublic: z.boolean().optional().default(false),
   // Emoji
-  emoji: z.string().max(4).optional(),
+  emoji: z.string().max(16, "Emoji value is too long").optional(),
   // Daily tasks
   tasks: z
     .array(

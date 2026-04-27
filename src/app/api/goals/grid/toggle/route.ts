@@ -1,6 +1,5 @@
 // src/app/api/goals/grid/toggle/route.ts
-// POST — toggle a goal's completion for a given day in the grid.
-// Adds/removes the goal's first task from completedTaskIds in the daily log.
+// POST - toggle a goal completion cell for a specific date in the grid.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -29,44 +28,64 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { goalId, date, done } = parsed.data;
 
-  // Get first task for this goal
-  const [task] = await db
-    .select()
+  const tasks = await db
+    .select({
+      id: goalTasks.id,
+      goalId: goalTasks.goalId,
+      text: goalTasks.text,
+      incrementValue: goalTasks.incrementValue,
+      order: goalTasks.order,
+    })
     .from(goalTasks)
     .where(and(eq(goalTasks.goalId, goalId), eq(goalTasks.userId, userId)))
-    .limit(1);
+    .orderBy(goalTasks.order);
 
-  if (!task) {
+  if (tasks.length === 0) {
     return NextResponse.json({ error: "No tasks found for goal" }, { status: 404 });
   }
 
-  // Get or create the daily log
+  const primaryTask = tasks[0]!;
+  const taskIds = tasks.map((task) => task.id);
+
   const [existingLog] = await db
     .select()
     .from(dailyLogs)
     .where(and(eq(dailyLogs.userId, userId), eq(dailyLogs.date, date)))
     .limit(1);
 
-  const currentIds: string[] = existingLog?.completedTaskIds ?? [];
-  const wasDone = currentIds.includes(task.id);
-  const newIds = done
-    ? Array.from(new Set([...currentIds, task.id]))
-    : currentIds.filter((id) => id !== task.id);
+  const currentIds = new Set(existingLog?.completedTaskIds ?? []);
+  const wasDone = taskIds.some((taskId) => currentIds.has(taskId));
 
+  const nextIds = new Set(currentIds);
+  if (done) {
+    if (!wasDone) {
+      nextIds.add(primaryTask.id);
+    }
+  } else {
+    for (const taskId of taskIds) {
+      nextIds.delete(taskId);
+    }
+  }
+
+  const completedTaskIds = Array.from(nextIds);
   if (existingLog) {
     await db
       .update(dailyLogs)
-      .set({ completedTaskIds: newIds })
+      .set({ completedTaskIds })
       .where(and(eq(dailyLogs.userId, userId), eq(dailyLogs.date, date)));
   } else {
     await db.insert(dailyLogs).values({
       userId,
       date,
-      completedTaskIds: newIds,
+      completedTaskIds,
     });
   }
 
-  if (done && !wasDone) {
+  const newlyCompleted = Array.from(nextIds).filter((taskId) => !currentIds.has(taskId));
+  const newlyUncompleted = Array.from(currentIds).filter((taskId) => !nextIds.has(taskId));
+  const changedTaskIds = Array.from(new Set([...newlyCompleted, ...newlyUncompleted]));
+
+  if (changedTaskIds.length > 0) {
     const [goal] = await db
       .select({
         id: goals.id,
@@ -76,32 +95,60 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         targetValue: goals.targetValue,
       })
       .from(goals)
-      .where(and(eq(goals.id, task.goalId), eq(goals.userId, userId)))
+      .where(and(eq(goals.id, goalId), eq(goals.userId, userId)))
       .limit(1);
 
     if (goal) {
-      const inferredAmount = inferTaskIncrementFromText({
-        goalTitle: goal.title,
-        goalUnit: goal.unit,
-        goalCategory: goal.category,
-        goalTargetValue: goal.targetValue,
-        taskText: task.text,
-      });
-      const amount = task.incrementValue ?? inferredAmount ?? 1;
+      const taskById = new Map(tasks.map((task) => [task.id, task]));
+      const newlyCompletedSet = new Set(newlyCompleted);
+      const learnedTaskIncrements: Array<{ taskId: string; value: number }> = [];
+      let delta = 0;
 
-      if (task.incrementValue == null && inferredAmount != null) {
-        await db
-          .update(goalTasks)
-          .set({ incrementValue: inferredAmount })
-          .where(eq(goalTasks.id, task.id));
+      for (const taskId of changedTaskIds) {
+        const task = taskById.get(taskId);
+        if (!task) continue;
+
+        const inferredAmount = inferTaskIncrementFromText({
+          goalTitle: goal.title,
+          goalUnit: goal.unit,
+          goalCategory: goal.category,
+          goalTargetValue: goal.targetValue,
+          taskText: task.text,
+        });
+
+        const amount = task.incrementValue ?? inferredAmount ?? 1;
+        const direction = newlyCompletedSet.has(taskId) ? 1 : -1;
+        delta += direction * amount;
+
+        if (task.incrementValue == null && inferredAmount != null) {
+          learnedTaskIncrements.push({ taskId, value: inferredAmount });
+        }
       }
 
-      await db
-        .update(goals)
-        .set({ currentValue: sql`current_value + ${amount}`, updatedAt: new Date() })
-        .where(and(eq(goals.id, goal.id), eq(goals.userId, userId)));
+      for (const learned of learnedTaskIncrements) {
+        await db
+          .update(goalTasks)
+          .set({ incrementValue: learned.value })
+          .where(eq(goalTasks.id, learned.taskId));
+      }
+
+      if (Number.isFinite(delta) && delta !== 0) {
+        const nextValueExpr = sql`GREATEST(0, ${goals.currentValue} + ${delta})`;
+        await db
+          .update(goals)
+          .set({
+            currentValue: nextValueExpr,
+            isCompleted: sql`CASE WHEN ${goals.targetValue} IS NOT NULL THEN ${nextValueExpr} >= ${goals.targetValue} ELSE ${goals.isCompleted} END`,
+            completedAt: sql`CASE WHEN ${goals.targetValue} IS NOT NULL AND ${nextValueExpr} >= ${goals.targetValue} THEN COALESCE(${goals.completedAt}, NOW()) WHEN ${goals.targetValue} IS NOT NULL THEN NULL ELSE ${goals.completedAt} END`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(goals.id, goal.id), eq(goals.userId, userId)));
+      }
     }
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({
+    success: true,
+    done: taskIds.some((taskId) => nextIds.has(taskId)),
+  });
 }

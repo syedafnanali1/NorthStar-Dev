@@ -3,12 +3,19 @@
 // src/app/onboarding/onboarding-wizard.tsx
 // 6-step full-screen onboarding wizard.
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, ArrowRight, ArrowLeft, Mail, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import { DecomposeModal, type DecomposedGoal } from "@/components/ai/decompose-modal";
+import {
+  computeCadenceTarget,
+  ensureSmartGoalTasks,
+  inferGoalSmartSuggestion,
+  makeAutoTaskSuggestion,
+  type MoneyCadence,
+} from "@/lib/goal-intelligence";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -239,6 +246,8 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
   const [decomposeOpen, setDecomposeOpen] = useState(false);
   const [templates, setTemplates] = useState<GoalTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [smartAmount, setSmartAmount] = useState("");
+  const [moneyCadence, setMoneyCadence] = useState<MoneyCadence>("daily");
 
   const [state, setState] = useState<WizardState>({
     selectedCategories: [],
@@ -259,6 +268,39 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
       setState((prev) => ({ ...prev, [key]: value })),
     []
   );
+
+  const goalTitle = state.selectedTemplate?.title ?? state.customTitle ?? "";
+
+  const smartSuggestion = useMemo(
+    () =>
+      inferGoalSmartSuggestion(
+        goalTitle,
+        state.why,
+        state.goalCategory ?? state.selectedTemplate?.category ?? null
+      ),
+    [goalTitle, state.goalCategory, state.selectedTemplate?.category, state.why]
+  );
+
+  const smartAmountNumber = useMemo(() => {
+    const parsed = Number(smartAmount);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [smartAmount]);
+
+  useEffect(() => {
+    if (!state.goalCategory && goalTitle.trim().length >= 3) {
+      update("goalCategory", smartSuggestion.category);
+    }
+    if (!state.unit && smartSuggestion.unit) {
+      update("unit", smartSuggestion.unit);
+    }
+  }, [
+    goalTitle,
+    smartSuggestion.category,
+    smartSuggestion.unit,
+    state.goalCategory,
+    state.unit,
+    update,
+  ]);
 
   // Fetch templates whenever categories change and we move to step 2.
   const fetchTemplates = useCallback(async (categories: Category[]) => {
@@ -307,6 +349,8 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
     update("endDate", "");
     update("why", tpl.defaultWhy ?? "");
     update("tasks", tpl.defaultTasks ?? []);
+    setSmartAmount(tpl.targetValue !== null ? String(tpl.targetValue) : "");
+    setMoneyCadence("daily");
   }
 
   function selectCustomGoal() {
@@ -319,6 +363,8 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
     update("endDate", "");
     update("why", "");
     update("tasks", []);
+    setSmartAmount("");
+    setMoneyCadence("daily");
   }
 
   function applyDecomposedGoal(goal: DecomposedGoal) {
@@ -337,6 +383,8 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
     update("endDate", goal.suggestedEndDate ?? "");
     update("why", goal.why ?? "");
     update("tasks", goal.suggestedTasks.slice(0, 10));
+    setSmartAmount(goal.targetValue !== null ? String(goal.targetValue) : "");
+    setMoneyCadence("daily");
     toast("Goal pre-filled by AI ✨");
   }
 
@@ -368,15 +416,39 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
     update("tasks", state.tasks.filter((_, i) => i !== index));
   }
 
+  function addSmartTask() {
+    const suggestedTask = makeAutoTaskSuggestion({
+      title: goalTitle || "this goal",
+      intent: smartSuggestion.intent,
+      amount: smartAmountNumber,
+      unit: state.unit || smartSuggestion.unit,
+      cadence: moneyCadence,
+      startDate: null,
+      endDate: state.endDate || null,
+      targetValue: state.targetValue ? Number(state.targetValue) : null,
+    });
+
+    if (!suggestedTask.text || state.tasks.length >= 10) return;
+    if (state.tasks.some((task) => task.toLowerCase() === suggestedTask.text.toLowerCase())) {
+      return;
+    }
+
+    update("tasks", [...state.tasks, suggestedTask.text]);
+  }
+
   // ── Final submit ──────────────────────────────────────────────────────────
 
   async function handleFinish() {
     setSubmitting(true);
     try {
-      const title = state.selectedTemplate?.title ?? state.customTitle;
+      const title = (state.selectedTemplate?.title ?? state.customTitle).trim();
+      if (!title || title.length < 3) {
+        throw new Error("Please enter a goal title with at least 3 characters.");
+      }
       const category: Category =
         state.goalCategory ??
         state.selectedTemplate?.category ??
+        smartSuggestion.category ??
         (state.selectedCategories[0] ?? "custom");
       const parsedTargetValue = state.targetValue.trim()
         ? Number(state.targetValue)
@@ -388,6 +460,31 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
         throw new Error("Target amount must be a positive number.");
       }
 
+      const computedMoneyTarget =
+        smartSuggestion.intent === "money_saving" && smartAmountNumber
+          ? computeCadenceTarget({
+              amount: smartAmountNumber,
+              cadence: moneyCadence,
+              endDate: state.endDate.trim() || null,
+            })
+          : null;
+      const resolvedTargetValue =
+        parsedTargetValue ??
+        (smartSuggestion.intent === "weight_loss" ? smartAmountNumber ?? undefined : undefined) ??
+        (computedMoneyTarget ?? undefined);
+      const resolvedUnit = state.unit.trim() || smartSuggestion.unit || undefined;
+      const preparedTasks = ensureSmartGoalTasks({
+        title,
+        intent: smartSuggestion.intent,
+        unit: resolvedUnit ?? null,
+        amount: smartAmountNumber ?? resolvedTargetValue ?? null,
+        cadence: moneyCadence,
+        startDate: null,
+        endDate: state.endDate.trim() || null,
+        targetValue: resolvedTargetValue ?? null,
+        tasks: state.tasks.map((text) => ({ text })),
+      });
+
       const goalPayload = {
         title,
         why: state.why || undefined,
@@ -395,10 +492,14 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
         color:
           CATEGORIES.find((c) => c.value === category)?.color ?? "#C4963A",
         emoji: state.selectedTemplate?.emoji ?? "⭐",
-        targetValue: parsedTargetValue,
-        unit: state.unit.trim() || undefined,
+        targetValue: resolvedTargetValue,
+        unit: resolvedUnit,
         endDate: state.endDate.trim() || undefined,
-        tasks: state.tasks.map((text) => ({ text, isRepeating: true })),
+        tasks: preparedTasks.map((task) => ({
+          text: task.text,
+          isRepeating: true,
+          incrementValue: task.incrementValue,
+        })),
         milestones: [],
         isPublic: false,
       };
@@ -444,11 +545,6 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
       setSubmitting(false);
     }
   }
-
-  // ── Derived ──────────────────────────────────────────────────────────────
-
-  const goalTitle =
-    state.selectedTemplate?.title ?? state.customTitle ?? "";
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -640,33 +736,91 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
                 </div>
               )}
 
+              <div className="rounded-2xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm text-white/70">
+                <p className="font-semibold text-gold">
+                  Smart detection:{" "}
+                  {smartSuggestion.intent === "reading"
+                    ? "Reading goal"
+                    : smartSuggestion.intent === "weight_loss"
+                    ? "Weight goal"
+                    : smartSuggestion.intent === "money_saving"
+                    ? "Money goal"
+                    : "Custom goal"}
+                </p>
+                <p className="mt-1 text-white/55">
+                  {smartSuggestion.intent === "reading"
+                    ? "We will track pages and auto-log your selected page amount for each completed intention."
+                    : smartSuggestion.intent === "weight_loss"
+                    ? "Set your target loss and unit. Progress can be distributed automatically to keep you on pace."
+                    : smartSuggestion.intent === "money_saving"
+                    ? "Set amount + cadence. If you choose a deadline, we will calculate the total target for you."
+                    : "Use any metric and unit you want. You can still edit later."}
+                </p>
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-2">
                   <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/40">
-                    Target (optional)
+                    {smartSuggestion.intent === "reading"
+                      ? smartSuggestion.quantityLabel
+                      : smartSuggestion.intent === "weight_loss"
+                      ? smartSuggestion.quantityLabel
+                      : smartSuggestion.intent === "money_saving"
+                      ? smartSuggestion.quantityLabel
+                      : "Target (optional)"}
                   </label>
                   <input
                     type="number"
                     min="0"
                     step="any"
-                    value={state.targetValue}
-                    onChange={(e) => update("targetValue", e.target.value)}
+                    value={smartSuggestion.intent === "generic" ? state.targetValue : smartAmount}
+                    onChange={(e) => {
+                      if (smartSuggestion.intent === "generic") {
+                        update("targetValue", e.target.value);
+                        return;
+                      }
+                      setSmartAmount(e.target.value);
+                      if (smartSuggestion.intent === "weight_loss") {
+                        update("targetValue", e.target.value);
+                      }
+                    }}
                     placeholder="42.2"
                     className="w-full rounded-2xl border border-white/15 bg-white/6 px-4 py-3 text-sm text-white placeholder-white/25 outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20"
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/40">
-                    Unit (optional)
+                    Unit
                   </label>
-                  <input
-                    type="text"
-                    value={state.unit}
-                    onChange={(e) => update("unit", e.target.value)}
-                    placeholder="km"
-                    maxLength={20}
-                    className="w-full rounded-2xl border border-white/15 bg-white/6 px-4 py-3 text-sm text-white placeholder-white/25 outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20"
-                  />
+                  {smartSuggestion.intent === "reading" ? (
+                    <input
+                      type="text"
+                      value="pages"
+                      readOnly
+                      className="w-full rounded-2xl border border-white/15 bg-white/8 px-4 py-3 text-sm text-white/70 outline-none"
+                    />
+                  ) : smartSuggestion.intent === "money_saving" || smartSuggestion.intent === "weight_loss" ? (
+                    <select
+                      value={state.unit || smartSuggestion.unit || ""}
+                      onChange={(e) => update("unit", e.target.value)}
+                      className="w-full rounded-2xl border border-white/15 bg-white/6 px-4 py-3 text-sm text-white outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20"
+                    >
+                      {smartSuggestion.unitOptions.map((unitOption) => (
+                        <option key={unitOption} value={unitOption}>
+                          {unitOption}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={state.unit}
+                      onChange={(e) => update("unit", e.target.value)}
+                      placeholder="km"
+                      maxLength={20}
+                      className="w-full rounded-2xl border border-white/15 bg-white/6 px-4 py-3 text-sm text-white placeholder-white/25 outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20"
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/40">
@@ -680,6 +834,25 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
                   />
                 </div>
               </div>
+
+              {smartSuggestion.intent === "money_saving" ? (
+                <div className="space-y-2">
+                  <label className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/40">
+                    Cadence
+                  </label>
+                  <select
+                    value={moneyCadence}
+                    onChange={(e) => setMoneyCadence(e.target.value as MoneyCadence)}
+                    className="w-full rounded-2xl border border-white/15 bg-white/6 px-4 py-3 text-sm text-white outline-none transition focus:border-gold/50 focus:ring-2 focus:ring-gold/20"
+                  >
+                    {smartSuggestion.cadenceOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               <div className="flex justify-between gap-3">
                 <button
@@ -782,6 +955,36 @@ export function OnboardingWizard({ userName }: OnboardingWizardProps) {
                   These appear on your calendar every day as intentions.
                 </p>
               </div>
+
+              {state.tasks.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-4 py-3 text-sm text-white/65">
+                  <p className="font-semibold text-white/85">Quick start intention</p>
+                  <p className="mt-1">
+                    Auto-suggest:{" "}
+                    <span className="text-white">
+                      {
+                        makeAutoTaskSuggestion({
+                          title: goalTitle || "this goal",
+                          intent: smartSuggestion.intent,
+                          amount: smartAmountNumber,
+                          unit: state.unit || smartSuggestion.unit,
+                          cadence: moneyCadence,
+                          endDate: state.endDate || null,
+                          targetValue: state.targetValue ? Number(state.targetValue) : null,
+                        }).text
+                      }
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addSmartTask}
+                    className="mt-2 inline-flex items-center gap-2 rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 text-xs font-semibold text-gold transition hover:bg-gold/20"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Use smart default
+                  </button>
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 {state.tasks.map((task, index) => (
