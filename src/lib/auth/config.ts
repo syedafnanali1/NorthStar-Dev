@@ -39,15 +39,15 @@ const facebookConfigured = isFacebookOAuthAvailable(
   process.env["FACEBOOK_CLIENT_SECRET"]
 );
 
-const stepUpScopeRaw = process.env["AUTH_STEP_UP_SCOPE"]?.trim().toLowerCase() ?? "all";
+const stepUpScopeRaw = process.env["AUTH_STEP_UP_SCOPE"]?.trim().toLowerCase() ?? "off";
 const stepUpScope =
   stepUpScopeRaw === "all" || stepUpScopeRaw === "admin" || stepUpScopeRaw === "off"
     ? stepUpScopeRaw
-    : "all";
+    : "off";
 
 if (stepUpScopeRaw !== stepUpScope) {
   console.warn(
-    `[auth] Invalid AUTH_STEP_UP_SCOPE="${stepUpScopeRaw}". Falling back to "all".`
+    `[auth] Invalid AUTH_STEP_UP_SCOPE="${stepUpScopeRaw}". Falling back to "off".`
   );
 }
 
