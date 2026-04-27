@@ -180,6 +180,12 @@ function shouldEnforceOauthStepUp(email: string): boolean {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: authAdapter,
 
+  // Required for Vercel and other reverse proxies — trusts x-forwarded-host
+  // so NextAuth uses the correct public URL for PKCE/state cookie validation.
+  trustHost: true,
+
+  secret: process.env["AUTH_SECRET"] ?? process.env["NEXTAUTH_SECRET"],
+
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60,
