@@ -183,8 +183,7 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
         throw new Error("Failed to start demo mode");
       }
 
-      router.push("/dashboard");
-      router.refresh();
+      window.location.href = "/dashboard";
     } catch (error) {
       setServerError(
         error instanceof Error ? error.message : "Demo mode is unavailable"

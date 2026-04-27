@@ -11,9 +11,12 @@ const DEMO_PASSWORD = "NorthStarDemo123";
 
 export async function POST(): Promise<NextResponse> {
   try {
+    const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+
     const [existingUser] = await db
       .select({
         id: users.id,
+        emailVerified: users.emailVerified,
         passwordHash: users.passwordHash,
       })
       .from(users)
@@ -21,22 +24,22 @@ export async function POST(): Promise<NextResponse> {
       .limit(1);
 
     if (!existingUser) {
-      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
       await db.insert(legacyUsersTable).values({
         id: `usr_${nanoid(12)}`,
         name: "NorthStar Demo",
+        username: "northstar_demo",
         email: DEMO_EMAIL,
         passwordHash,
         emailVerified: new Date(),
-        location: "Demo Mode",
         bio: "Exploring the product in demo mode.",
       });
-    } else if (!existingUser.passwordHash) {
-      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+    } else {
+      // Always ensure emailVerified and passwordHash are set for demo user
       await db
         .update(legacyUsersTable)
         .set({
           passwordHash,
+          emailVerified: existingUser.emailVerified ?? new Date(),
           updatedAt: new Date(),
         })
         .where(eq(legacyUsersTable.id, existingUser.id));
