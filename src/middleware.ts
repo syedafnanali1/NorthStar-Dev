@@ -1,23 +1,14 @@
 // src/middleware.ts
 // Protect app routes and redirect unauthenticated users to /auth/login.
+// Uses a lightweight Edge-compatible NextAuth config to avoid bundling
+// drizzle/bcrypt in the Edge runtime.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { edgeAuth } from "@/lib/auth/edge-config";
 
-function isSecureRequest(req: NextRequest) {
-  return req.nextUrl.protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
-}
-
-export default async function middleware(req: NextRequest) {
-  const secureCookie = isSecureRequest(req);
-  const token = await getToken({
-    req,
-    secret: process.env["AUTH_SECRET"] ?? process.env["NEXTAUTH_SECRET"],
-    secureCookie,
-  });
-
-  if (token) {
+export default edgeAuth(function middleware(req: NextRequest & { auth: unknown }) {
+  if (req.auth) {
     return NextResponse.next();
   }
 
@@ -25,7 +16,7 @@ export default async function middleware(req: NextRequest) {
   loginUrl.pathname = "/auth/login";
   loginUrl.searchParams.set("from", `${req.nextUrl.pathname}${req.nextUrl.search}`);
   return NextResponse.redirect(loginUrl);
-}
+});
 
 export const config = {
   matcher: [
