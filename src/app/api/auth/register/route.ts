@@ -127,15 +127,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const normalizedEmail = normalizeEmail(email);
     const normalizedName = fullName.trim().replace(/\s+/g, " ");
 
-    if (
-      !isEmailDeliveryConfigured(process.env["RESEND_API_KEY"], process.env["EMAIL_FROM"])
-    ) {
-      return jsonError(
-        503,
-        "EMAIL_DELIVERY_UNAVAILABLE",
-        "Email sign-up requires a verified sending domain. Please set up a custom domain in your Resend dashboard (resend.com/domains) and update the EMAIL_FROM environment variable, or sign in with Google."
-      );
-    }
+    const emailDeliveryReady = isEmailDeliveryConfigured(
+      process.env["RESEND_API_KEY"],
+      process.env["EMAIL_FROM"]
+    );
 
     const [existing] = await db
       .select({
@@ -158,6 +153,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     let userId: string;
 
+    // Auto-verify when email delivery isn't configured — user can log in immediately
+    const autoVerifiedAt = emailDeliveryReady ? null : new Date();
+
     if (existing) {
       await db
         .update(legacyUsersTable)
@@ -166,7 +164,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           username: resolvedUsername,
           passwordHash,
           image: profilePhotoDataUrl ?? null,
-          emailVerified: null,
+          emailVerified: autoVerifiedAt,
           updatedAt: new Date(),
         })
         .where(eq(legacyUsersTable.id, existing.id));
@@ -184,7 +182,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           email: normalizedEmail,
           passwordHash,
           image: profilePhotoDataUrl ?? null,
-          emailVerified: null,
+          emailVerified: autoVerifiedAt,
         })
         .returning({ id: legacyUsersTable.id });
 
@@ -229,6 +227,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // If email delivery isn't configured, the account is already verified — go straight to login
+    if (!emailDeliveryReady) {
+      return NextResponse.json(
+        {
+          success: true,
+          code: "ACCOUNT_CREATED",
+          message: "Account created. You can now sign in.",
+          data: {
+            email: normalizedEmail,
+            redirectTo: `/auth/login?registered=1`,
+          },
+        },
+        { status: 201 }
+      );
+    }
+
     const otpResult = await createOtpChallenge({
       userId,
       email: normalizedEmail,
@@ -259,19 +273,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch (emailError) {
       console.error("[POST /api/auth/register] verification_email_failed", emailError);
       return jsonError(
-        isResendTestingModeError(emailError) ? 503 : 502,
-        isResendTestingModeError(emailError)
-          ? "EMAIL_DELIVERY_UNAVAILABLE"
-          : "VERIFICATION_EMAIL_FAILED",
-        isResendTestingModeError(emailError)
-          ? "Email delivery requires a verified custom domain in Resend. Visit resend.com/domains to set one up, then update EMAIL_FROM. Until then, use Google sign-in."
-          : "We couldn't send a verification email. Please check the address and try again.",
-        isResendTestingModeError(emailError)
-          ? undefined
-          : {
-              canUpdateEmail: true,
-              resendAfterSeconds: AUTH_SECURITY_LIMITS.otpResendCooldownSeconds,
-            }
+        502,
+        "VERIFICATION_EMAIL_FAILED",
+        "We couldn't send a verification email. Please check the address and try again.",
+        { canUpdateEmail: true, resendAfterSeconds: AUTH_SECURITY_LIMITS.otpResendCooldownSeconds }
       );
     }
 
