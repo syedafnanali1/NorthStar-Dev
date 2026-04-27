@@ -209,6 +209,7 @@ export const users = pgTable("users", {
   // Profile
   age: integer("age"),
   location: text("location"),
+  jobTitle: text("job_title"),
   bio: text("bio"),
   // Settings
   darkMode: boolean("dark_mode").default(false).notNull(),
@@ -1831,6 +1832,31 @@ export const webhookSubscriptions = pgTable(
     userIdx: index("webhook_subscriptions_user_idx").on(table.userId),
     teamIdx: index("webhook_subscriptions_team_idx").on(table.teamId),
     activeIdx: index("webhook_subscriptions_active_idx").on(table.isActive),
+  })
+);
+
+// ─── DIRECT MESSAGES ─────────────────────────────────────────────────────────
+
+export const directMessages = pgTable(
+  "direct_messages",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => `dm_${nanoid(12)}`),
+    senderId: text("sender_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    receiverId: text("receiver_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    isRead: boolean("is_read").default(false).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    senderIdx:      index("dm_sender_idx").on(table.senderId),
+    receiverIdx:    index("dm_receiver_idx").on(table.receiverId),
+    conversationIdx: index("dm_conversation_idx").on(table.senderId, table.receiverId, table.createdAt),
   })
 );
 
