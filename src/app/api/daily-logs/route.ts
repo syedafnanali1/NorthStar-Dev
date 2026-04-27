@@ -130,7 +130,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const newlyUncompleted = Array.from(prevIds).filter((id) => !nextIds.has(id));
     const changedTaskIds = Array.from(new Set([...newlyCompleted, ...newlyUncompleted]));
 
-    // Smart auto-tracking: increment goal progress for newly completed tasks
+    // Smart auto-tracking: apply progress deltas for newly checked and unchecked tasks.
     if (changedTaskIds.length > 0) {
         // Look up each task's metadata
         const taskRows = await db
