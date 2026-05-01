@@ -41,6 +41,9 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverActionLink, setServerActionLink] = useState<LoginActionLink | null>(null);
   const [providerStatus] = useState<AuthConfigStatus>(initialProviderStatus);
+  // warming = true while the DB cold-start ping is in flight.
+  // Buttons are disabled until it resolves so users can't fire login before DB is ready.
+  const [warming, setWarming] = useState(true);
 
   const searchParams = useSearchParams();
   const {
@@ -51,9 +54,17 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
     resolver: zodResolver(loginSchema),
   });
 
-  // Fire-and-forget warmup: wakes Neon DB + serverless runtime before user clicks login.
   useEffect(() => {
-    void fetch("/api/ping").catch(() => undefined);
+    // Wake Neon DB + serverless runtime. Wait up to 25 s, then unblock anyway.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    fetch("/api/ping", { signal: controller.signal })
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(timer);
+        setWarming(false);
+      });
+    return () => { controller.abort(); clearTimeout(timer); };
   }, []);
 
   useEffect(() => {
@@ -206,10 +217,16 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
 
   return (
     <div className="space-y-4">
+      {warming ? (
+        <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/50">
+          <div className="h-3 w-3 rounded-full border border-white/30 border-t-white/70 animate-spin" />
+          Connecting…
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => handleOAuth("google")}
-        disabled={!!oauthLoading || (providerStatus ? !providerStatus.googleConfigured : false)}
+        disabled={warming || !!oauthLoading || (providerStatus ? !providerStatus.googleConfigured : false)}
         className="flex min-h-[52px] w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-white transition-all hover:bg-white/10 disabled:opacity-50"
       >
         {oauthLoading === "google" ? (
@@ -228,7 +245,7 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
       <button
         type="button"
         onClick={() => handleOAuth("facebook")}
-        disabled={!!oauthLoading || (providerStatus ? !providerStatus.facebookConfigured : false)}
+        disabled={warming || !!oauthLoading || (providerStatus ? !providerStatus.facebookConfigured : false)}
         className="flex min-h-[52px] w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-white transition-all hover:bg-white/10 disabled:opacity-50"
       >
         {oauthLoading === "facebook" ? (
@@ -303,7 +320,7 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={warming || loading}
           className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-gold px-4 text-sm font-semibold text-ink transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50"
         >
           {loading ? (
@@ -318,7 +335,7 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
       <button
         type="button"
         onClick={handleDemoMode}
-        disabled={demoLoading}
+        disabled={warming || demoLoading}
         className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-transparent px-4 text-sm font-medium text-white/85 transition-all hover:bg-white/6 disabled:opacity-50"
       >
         {demoLoading ? (
