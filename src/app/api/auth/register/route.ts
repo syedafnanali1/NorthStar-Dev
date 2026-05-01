@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { appUrl } from "@/lib/app-url";
-import { users, userAuthProfiles } from "@/drizzle/schema";
+import { users, userAuthProfiles, userSubscriptions } from "@/drizzle/schema";
 import { legacyUsersTable } from "@/lib/auth/adapter-schema";
 import { isDatabaseConfigured, isEmailDeliveryConfigured } from "@/lib/env-checks";
 import { authEmailService } from "@/lib/email/auth";
@@ -193,6 +193,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       userId = created.id;
+    }
+
+    try {
+      const now = new Date();
+      await db
+        .update(users)
+        .set({ trialStartDate: now })
+        .where(eq(users.id, userId));
+      await db
+        .insert(userSubscriptions)
+        .values({
+          userId,
+          plan: "free",
+          status: "trialing",
+          priceCents: 0,
+          trialStartDate: now,
+          planStartDate: now,
+        })
+        .onConflictDoNothing();
+    } catch (trialError) {
+      console.warn("[POST /api/auth/register] trial_subscription_write_failed", trialError);
     }
 
     try {

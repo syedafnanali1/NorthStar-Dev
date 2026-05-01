@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { RightPanel } from "./right-panel";
 import { SplashScreen } from "@/components/ui/splash-screen";
 import { XpToastProvider } from "@/components/ui/xp-toast";
+import { DemoBanner } from "@/components/ui/demo-banner";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -22,6 +23,7 @@ export async function AppLayout({
     <div className="min-h-screen overflow-x-clip bg-cream">
       <SplashScreen />
       <XpToastProvider />
+      <DemoBanner isDemo={user.isDemo ?? false} />
       <Sidebar
         user={{
           id: user.id,

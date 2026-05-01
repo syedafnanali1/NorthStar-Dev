@@ -11,6 +11,7 @@ import {
   CalendarDays,
   Moon,
   Settings,
+  Star,
   Sun,
   Target,
   Trophy,
@@ -158,6 +159,22 @@ export function Sidebar({ user }: SidebarProps) {
               {theme.dark ? "Light mode" : "Dark mode"}
             </span>
           </button>
+
+          <Link
+            href="/premium"
+            title={!showLabel ? "Upgrade" : undefined}
+            className={cn(
+              "flex h-10 w-full items-center gap-3 rounded-xl px-2.5 text-sm font-medium transition-all duration-150",
+              pathname.startsWith("/premium")
+                ? "bg-ink text-cream-paper"
+                : "text-gold hover:bg-gold/10"
+            )}
+          >
+            <Star className="h-[17px] w-[17px] flex-shrink-0 fill-gold" strokeWidth={1.75} />
+            <span className={cn("truncate transition-all duration-200", showLabel ? "block" : "hidden")}>
+              Upgrade
+            </span>
+          </Link>
 
           <Link
             href="/profile"

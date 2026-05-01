@@ -12,26 +12,35 @@ const envSchema = z.object({
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
   NEXTAUTH_URL: z.string().url().optional(),
 
-  // Google OAuth
-  GOOGLE_CLIENT_ID: z.string().min(1, "GOOGLE_CLIENT_ID is required"),
-  GOOGLE_CLIENT_SECRET: z.string().min(1, "GOOGLE_CLIENT_SECRET is required"),
+  // Google OAuth (optional — app works without it, Google sign-in is disabled when missing)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 
-  // Facebook OAuth
-  FACEBOOK_CLIENT_ID: z.string().min(1, "FACEBOOK_CLIENT_ID is required"),
-  FACEBOOK_CLIENT_SECRET: z.string().min(1, "FACEBOOK_CLIENT_SECRET is required"),
+  // Facebook OAuth (optional — app works without it, Facebook sign-in is disabled when missing)
+  FACEBOOK_CLIENT_ID: z.string().optional(),
+  FACEBOOK_CLIENT_SECRET: z.string().optional(),
 
-  // Email
-  RESEND_API_KEY: z.string().startsWith("re_", "RESEND_API_KEY must start with re_"),
-  EMAIL_FROM: z.string().email("EMAIL_FROM must be a valid email address"),
+  // Email (optional — email sign-up disabled when missing; use Google sign-in instead)
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
 
   // SMS (optional - app works without it but invite by SMS is disabled)
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
 
+  // AI (optional — AI coaching features disabled when missing)
+  ANTHROPIC_API_KEY: z.string().optional(),
+
+  // Security (optional — falls back to AUTH_SECRET when missing)
+  AUTH_SECURITY_SECRET: z.string().optional(),
+
   // App
-  NEXT_PUBLIC_APP_URL: z.string().url("NEXT_PUBLIC_APP_URL must be a valid URL"),
+  NEXT_PUBLIC_APP_URL: z.string().url("NEXT_PUBLIC_APP_URL must be a valid URL").optional(),
   NEXT_PUBLIC_APP_NAME: z.string().default("North Star"),
+
+  // Cron jobs
+  CRON_SECRET: z.string().optional(),
 
   // File uploads (optional)
   BLOB_READ_WRITE_TOKEN: z.string().optional(),

@@ -241,6 +241,10 @@ export const users = pgTable("users", {
     .$type<Record<string, unknown>>()
     .default({})
     .notNull(),
+  // ── Subscription / trial fields ──────────────────────────────────────────────
+  trialStartDate: timestamp("trial_start_date", { mode: "date" }),
+  isDemo: boolean("is_demo").default(false).notNull(),
+  role: text("role").$type<"member" | "coach" | "admin">().default("member").notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -1728,6 +1732,10 @@ export const userSubscriptions = pgTable(
     status: text("status").default("active").notNull(),
     priceCents: integer("price_cents").default(0).notNull(),
     renewsAt: timestamp("renews_at", { mode: "date" }),
+    trialStartDate: timestamp("trial_start_date", { mode: "date" }),
+    planStartDate: timestamp("plan_start_date", { mode: "date" }),
+    planExpiresDate: timestamp("plan_expires_date", { mode: "date" }),
+    stripeCustomerId: text("stripe_customer_id"),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },

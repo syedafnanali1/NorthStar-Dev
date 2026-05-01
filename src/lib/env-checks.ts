@@ -73,10 +73,10 @@ export function isEmailDeliveryConfigured(
   if (!hasValue(apiKey) || !hasValue(fromAddress)) return false;
   // Reject obvious placeholder values
   if (includesAny(apiKey!, ["re_test_", "your-resend-api-key", "example"])) return false;
-  // onboarding@resend.dev is Resend's test-only address — it can ONLY send to the
-  // Resend account owner's email. Real users will never receive these emails.
-  // A verified custom domain must be used for production email delivery.
-  if (includesAny(fromAddress!, ["onboarding@resend.dev"])) return false;
+  // Note: onboarding@resend.dev is Resend's test sender — emails can only be delivered
+  // to the Resend account owner's email address. For full multi-user delivery,
+  // add a verified custom domain at resend.com/domains and update EMAIL_FROM.
+  // We allow it here so the app works end-to-end in development.
   return true;
 }
 

@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users } from "@/drizzle/schema";
+import { users, userSubscriptions } from "@/drizzle/schema";
 import { legacyUsersTable } from "@/lib/auth/adapter-schema";
 
 const DEMO_EMAIL = "demo@northstar.local";
@@ -11,8 +11,6 @@ const DEMO_PASSWORD = "NorthStarDemo123";
 
 export async function POST(): Promise<NextResponse> {
   try {
-    const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
-
     const [existingUser] = await db
       .select({
         id: users.id,
@@ -24,17 +22,37 @@ export async function POST(): Promise<NextResponse> {
       .limit(1);
 
     if (!existingUser) {
+      // Only hash when creating the demo user for the first time
+      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+      const demoUserId = `usr_${nanoid(12)}`;
+      const now = new Date();
       await db.insert(legacyUsersTable).values({
-        id: `usr_${nanoid(12)}`,
+        id: demoUserId,
         name: "NorthStar Demo",
         username: "northstar_demo",
         email: DEMO_EMAIL,
         passwordHash,
-        emailVerified: new Date(),
+        emailVerified: now,
         bio: "Exploring the product in demo mode.",
       });
-    } else {
-      // Always ensure emailVerified and passwordHash are set for demo user
+      await db
+        .update(users)
+        .set({ trialStartDate: now, isDemo: true })
+        .where(eq(users.id, demoUserId));
+      await db
+        .insert(userSubscriptions)
+        .values({
+          userId: demoUserId,
+          plan: "pro",
+          status: "active",
+          priceCents: 0,
+          trialStartDate: now,
+          planStartDate: now,
+        })
+        .onConflictDoNothing();
+    } else if (!existingUser.emailVerified || !existingUser.passwordHash) {
+      // Only update if the demo account is in a broken state
+      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
       await db
         .update(legacyUsersTable)
         .set({

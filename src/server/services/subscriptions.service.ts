@@ -2,8 +2,16 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { userSubscriptions } from "@/drizzle/schema";
 
-export type SubscriptionPlan = "free" | "pro" | "team";
+export type SubscriptionPlan = "free" | "pro" | "team" | "coaches" | "whitelabel";
 export type SubscriptionStatus = "active" | "trialing" | "canceled" | "past_due";
+
+const PLAN_PRICE_CENTS: Record<SubscriptionPlan, number> = {
+  free: 0,
+  pro: 999,
+  team: 1499,
+  coaches: 4900,
+  whitelabel: 0,
+};
 
 let warnedMissingSubscriptionsTable = false;
 
@@ -99,8 +107,7 @@ export const subscriptionsService = {
     status?: SubscriptionStatus;
     renewsAt?: Date | null;
   }) {
-    const priceCents =
-      input.plan === "pro" ? 999 : input.plan === "team" ? 1499 : 0;
+    const priceCents = PLAN_PRICE_CENTS[input.plan] ?? 0;
     let saved:
       | {
           id: string;
@@ -171,8 +178,9 @@ export const subscriptionsService = {
     }
 
     if (!sub) return false;
+    const paidPlans: string[] = ["pro", "team", "coaches", "whitelabel"];
     return (
-      (sub.plan === "pro" || sub.plan === "team") &&
+      paidPlans.includes(sub.plan) &&
       (sub.status === "active" || sub.status === "trialing")
     );
   },

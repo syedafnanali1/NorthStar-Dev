@@ -28,5 +28,13 @@ export const config = {
     "/profile/:path*",
     "/onboarding/:path*",
     "/onboarding",
+    "/groups/:path*",
+    "/groups",
+    "/grid/:path*",
+    "/grid",
+    "/premium/:path*",
+    "/premium",
+    "/coach/:path*",
+    "/coach",
   ],
 };

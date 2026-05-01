@@ -89,6 +89,9 @@ export async function getCurrentUser(): Promise<User | null> {
         alwaysVerifySignIn: false,
         lastStepUpVerifiedAt: null,
         sessionVersion: 1,
+        trialStartDate: null,
+        isDemo: false,
+        role: "member" as const,
       } as User;
     } catch {
       return null;
