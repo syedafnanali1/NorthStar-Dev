@@ -23,7 +23,7 @@ export async function POST(): Promise<NextResponse> {
 
     if (!existingUser) {
       // Only hash when creating the demo user for the first time
-      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
       const demoUserId = `usr_${nanoid(12)}`;
       const now = new Date();
       await db.insert(legacyUsersTable).values({
@@ -52,7 +52,7 @@ export async function POST(): Promise<NextResponse> {
         .onConflictDoNothing();
     } else if (!existingUser.emailVerified || !existingUser.passwordHash) {
       // Only update if the demo account is in a broken state
-      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
       await db
         .update(legacyUsersTable)
         .set({

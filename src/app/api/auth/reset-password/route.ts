@@ -100,7 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 10);
 
     await Promise.all([
       db

@@ -151,7 +151,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return jsonError(409, "EMAIL_ALREADY_USED", "An account with this email already exists");
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 10);
     const resolvedUsername = await ensureUniqueUsername(
       username?.trim() || slugifyUsername(normalizedName)
     );
