@@ -3,6 +3,8 @@ import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+
+export const runtime = "edge";
 import { users, userSubscriptions } from "@/drizzle/schema";
 import { legacyUsersTable } from "@/lib/auth/adapter-schema";
 

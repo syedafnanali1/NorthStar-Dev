@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+export const runtime = "edge";
+
 import { accounts, users } from "@/drizzle/schema";
 import { db } from "@/lib/db";
 import { authEmailService } from "@/lib/email/auth";

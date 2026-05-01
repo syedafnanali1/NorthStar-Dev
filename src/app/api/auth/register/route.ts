@@ -4,6 +4,8 @@ import { eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+export const runtime = "edge";
+
 import { db } from "@/lib/db";
 import { appUrl } from "@/lib/app-url";
 import { users, userAuthProfiles, userSubscriptions } from "@/drizzle/schema";
