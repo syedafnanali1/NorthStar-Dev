@@ -51,6 +51,11 @@ export function LoginForm({ initialProviderStatus }: LoginFormProps) {
     resolver: zodResolver(loginSchema),
   });
 
+  // Fire-and-forget warmup: wakes Neon DB + serverless runtime before user clicks login.
+  useEffect(() => {
+    void fetch("/api/ping").catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     const verified = searchParams?.get("verified");
     if (verified === "1") {
