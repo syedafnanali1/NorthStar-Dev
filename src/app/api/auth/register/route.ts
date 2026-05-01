@@ -20,7 +20,6 @@ import {
   normalizeEmail,
 } from "@/lib/auth/security";
 import { registerSchema } from "@/lib/validators/auth";
-import { invitationsService } from "@/server/services/invitations.service";
 
 function jsonError(status: number, code: string, message: string, data?: Record<string, unknown>) {
   return NextResponse.json(
@@ -246,6 +245,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (inviteToken) {
       try {
+        const { invitationsService } = await import("@/server/services/invitations.service");
         await invitationsService.accept(inviteToken, userId);
       } catch {
         // Registration should continue even if invite acceptance fails.
