@@ -2183,6 +2183,90 @@ export const groupEngagementLogsRelations = relations(groupEngagementLogs, ({ on
   group: one(groups, { fields: [groupEngagementLogs.groupId], references: [groups.id] }),
 }));
 
+// ─── GOAL INTENTIONS ──────────────────────────────────────────────────────────
+
+export const goalIntentions = pgTable(
+  "goal_intentions",
+  {
+    id:             text("id").primaryKey().$defaultFn(() => `gin_${nanoid(12)}`),
+    goalId:         text("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
+    userId:         text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title:          text("title").notNull(),
+    scheduledAt:    timestamp("scheduled_at"),
+    recurrence:     text("recurrence", { enum: ["none", "daily", "weekly", "monthly", "custom"] }).default("none").notNull(),
+    notes:          text("notes"),
+    isDefault:      boolean("is_default").default(false).notNull(),
+    createdAt:      timestamp("created_at").defaultNow().notNull(),
+    updatedAt:      timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("goal_intentions_goal_idx").on(t.goalId),
+    index("goal_intentions_user_idx").on(t.userId),
+  ]
+);
+
+export const intentionRsvps = pgTable(
+  "intention_rsvps",
+  {
+    id:          text("id").primaryKey().$defaultFn(() => `rsvp_${nanoid(12)}`),
+    intentionId: text("intention_id").notNull().references(() => goalIntentions.id, { onDelete: "cascade" }),
+    userId:      text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    status:      text("status", { enum: ["attending", "not_attending"] }).notNull(),
+    createdAt:   timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("intention_rsvp_unique").on(t.intentionId, t.userId),
+  ]
+);
+
+export const analyticsEvents = pgTable(
+  "analytics_events",
+  {
+    id:         text("id").primaryKey().$defaultFn(() => `aev_${nanoid(12)}`),
+    userId:     text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    eventType:  text("event_type").notNull(),
+    entityType: text("entity_type"),
+    entityId:   text("entity_id"),
+    metadata:   jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("analytics_events_user_idx").on(t.userId),
+    index("analytics_events_type_idx").on(t.eventType),
+    index("analytics_events_at_idx").on(t.occurredAt),
+  ]
+);
+
+export const nudgeLogs = pgTable(
+  "nudge_logs",
+  {
+    id:        text("id").primaryKey().$defaultFn(() => `ndg_${nanoid(12)}`),
+    userId:    text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    nudgeType: text("nudge_type").notNull(),
+    shownAt:   timestamp("shown_at").defaultNow().notNull(),
+  },
+  (t) => [index("nudge_logs_user_idx").on(t.userId)]
+);
+
+export const goalIntentionsRelations = relations(goalIntentions, ({ one, many }) => ({
+  goal:  one(goals, { fields: [goalIntentions.goalId], references: [goals.id] }),
+  user:  one(users, { fields: [goalIntentions.userId], references: [users.id] }),
+  rsvps: many(intentionRsvps),
+}));
+
+export const intentionRsvpsRelations = relations(intentionRsvps, ({ one }) => ({
+  intention: one(goalIntentions, { fields: [intentionRsvps.intentionId], references: [goalIntentions.id] }),
+  user:      one(users, { fields: [intentionRsvps.userId], references: [users.id] }),
+}));
+
+export const analyticsEventsRelations = relations(analyticsEvents, ({ one }) => ({
+  user: one(users, { fields: [analyticsEvents.userId], references: [users.id] }),
+}));
+
+export const nudgeLogsRelations = relations(nudgeLogs, ({ one }) => ({
+  user: one(users, { fields: [nudgeLogs.userId], references: [users.id] }),
+}));
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
@@ -2270,3 +2354,10 @@ export type GroupChatComment = typeof groupChatComments.$inferSelect;
 export type NewGroupChatComment = typeof groupChatComments.$inferInsert;
 export type GroupEngagementLog = typeof groupEngagementLogs.$inferSelect;
 export type NewGroupEngagementLog = typeof groupEngagementLogs.$inferInsert;
+export type GoalIntention = typeof goalIntentions.$inferSelect;
+export type NewGoalIntention = typeof goalIntentions.$inferInsert;
+export type IntentionRsvp = typeof intentionRsvps.$inferSelect;
+export type NewIntentionRsvp = typeof intentionRsvps.$inferInsert;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+export type NewAnalyticsEvent = typeof analyticsEvents.$inferInsert;
+export type NudgeLog = typeof nudgeLogs.$inferSelect;

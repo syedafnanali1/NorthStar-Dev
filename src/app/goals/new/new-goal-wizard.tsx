@@ -9,6 +9,7 @@ import { createGoalSchema, type CreateGoalInput } from "@/lib/validators/goals";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import { DecomposeModal, type DecomposedGoal } from "@/components/ai/decompose-modal";
+import { GoalIntentionsSheet } from "@/components/goals/goal-intentions-sheet";
 import {
   computeCadenceTarget,
   ensureSmartGoalTasks,
@@ -85,6 +86,9 @@ export function NewGoalWizard() {
   const [milestoneInput, setMilestoneInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [decomposeOpen, setDecomposeOpen] = useState(false);
+  const [createdGoalId, setCreatedGoalId] = useState<string | null>(null);
+  const [createdGoalTitle, setCreatedGoalTitle] = useState<string | null>(null);
+  const [intentionsOpen, setIntentionsOpen] = useState(false);
   const router = useRouter();
 
   const {
@@ -271,9 +275,17 @@ export function NewGoalWizard() {
         throw new Error(error.error ?? "Failed to create goal");
       }
 
+      const created = (await response.json()) as { goal?: { id: string; title: string } };
       toast("Goal created! ⭐");
-      router.push("/dashboard");
-      router.refresh();
+
+      if (created.goal?.id) {
+        setCreatedGoalId(created.goal.id);
+        setCreatedGoalTitle(created.goal.title ?? data.title);
+        setIntentionsOpen(true);
+      } else {
+        router.push("/dashboard");
+        router.refresh();
+      }
     } catch (error) {
       toast(
         error instanceof Error ? error.message : "Failed to create goal",
@@ -790,6 +802,18 @@ export function NewGoalWizard() {
         onClose={() => setDecomposeOpen(false)}
         onAccept={applyDecomposed}
       />
+
+      {intentionsOpen && createdGoalId && createdGoalTitle && (
+        <GoalIntentionsSheet
+          goalId={createdGoalId}
+          goalTitle={createdGoalTitle}
+          onClose={() => {
+            setIntentionsOpen(false);
+            router.push("/dashboard");
+            router.refresh();
+          }}
+        />
+      )}
     </form>
   );
 }

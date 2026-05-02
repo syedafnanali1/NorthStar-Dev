@@ -16,6 +16,8 @@ import { db } from "@/lib/db";
 import { circleConnections, users } from "@/drizzle/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { TrialBanner } from "@/components/ui/trial-banner";
+import { StatsGlanceCards } from "@/components/analytics/stats-glance-cards";
+import { CrossTabNudge } from "@/components/ui/cross-tab-nudge";
 
 export const metadata: Metadata = {
   title: "Your Goals",
@@ -108,6 +110,9 @@ export default async function DashboardPage() {
           </div>
         </div>
 
+        {/* ── Glance Stats ──────────────────────────────────────── */}
+        <StatsGlanceCards />
+
         {/* ── AI Coaching Banner ────────────────────────────────── */}
         {latestInsight ? (
           <AiInsightBanner insight={latestInsight} />
@@ -116,6 +121,13 @@ export default async function DashboardPage() {
         {momentum ? <MomentumCard momentum={momentum} /> : null}
         <GoalList goals={goals} circleMembers={circleMembers} />
         <MobileSidecarServer userId={user.id} />
+
+        {/* ── Cross-tab nudge (frequency-capped, 1/session) ─────── */}
+        <CrossTabNudge
+          variant={goals.length === 0 ? "post_goal_create" : "post_checkin"}
+          autoShow={goals.length > 0}
+          delayMs={5000}
+        />
       </div>
     </AppLayout>
   );

@@ -14,6 +14,8 @@ import { ProgressRing } from "@/components/ui/progress-ring";
 import { MomentModal } from "@/components/goals/moment-modal";
 import { ShareGoalModal } from "@/components/goals/share-goal-modal";
 import { CelebrationModal } from "@/components/goals/celebration-modal";
+import { GoalStatsLevel2 } from "@/components/goals/goal-stats-level2";
+import { GoalIntentionsSheet } from "@/components/goals/goal-intentions-sheet";
 import { toast } from "@/components/ui/toaster";
 import { cn, formatDate, formatUnit, relativeTime } from "@/lib/utils";
 import type { GoalWithDetails } from "@/server/services/goals.service";
@@ -122,6 +124,7 @@ export function GoalDetailView({
   // ── UI State ──────────────────────────────────────────────
   const [momentOpen, setMomentOpen]         = useState(false);
   const [shareOpen, setShareOpen]           = useState(false);
+  const [intentionsOpen, setIntentionsOpen] = useState(false);
   const [showAllThread, setShowAllThread]   = useState(false);
   const [showTimeline, setShowTimeline]     = useState(false);
   const [celebration, setCelebration]       = useState(false);
@@ -438,6 +441,11 @@ export function GoalDetailView({
               <Share2 className="h-3.5 w-3.5" />
               Share to Circle
             </button>
+            {isOwner && (
+              <button type="button" onClick={() => setIntentionsOpen(true)} className="btn-secondary h-9 rounded-full px-4 text-sm gap-1.5">
+                📅 Schedule
+              </button>
+            )}
           </div>
         </section>
 
@@ -771,6 +779,18 @@ export function GoalDetailView({
           </AnimatePresence>
         </section>
 
+        {/* ════════ 5b. LEVEL 2 STATS ════════ */}
+        <GoalStatsLevel2
+          goalId={goal.id}
+          currentValue={currentValue}
+          targetValue={goal.targetValue ?? null}
+          color={goal.color}
+          startDate={goal.startDate ? format(new Date(goal.startDate), "MMM d") : null}
+          endDate={goal.endDate ? format(new Date(goal.endDate), "MMM d") : null}
+          recentProgress={goal.recentProgress.map((p) => ({ date: p.loggedAt ? format(new Date(p.loggedAt), "yyyy-MM-dd") : "", value: p.value }))}
+          percentComplete={percent}
+        />
+
         {/* ════════ 6. ACHIEVEMENTS ════════ */}
         <section className="rounded-2xl border border-cream-dark bg-cream-paper p-5">
           <div className="mb-4">
@@ -864,6 +884,13 @@ export function GoalDetailView({
         </section>
       </div>
 
+      {intentionsOpen && (
+        <GoalIntentionsSheet
+          goalId={goal.id}
+          goalTitle={goal.title}
+          onClose={() => setIntentionsOpen(false)}
+        />
+      )}
       <MomentModal
         goalId={goal.id}
         goalTitle={goal.title}

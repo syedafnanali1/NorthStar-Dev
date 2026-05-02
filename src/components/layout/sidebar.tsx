@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useTheme } from "@/components/layout/theme-provider";
+import { useNavBadges } from "@/hooks/use-nav-badges";
 
 interface SidebarProps {
   user: Session["user"] & { id?: string };
@@ -40,9 +41,16 @@ const MOBILE_NAV_ITEMS = [
   { href: "/analytics", label: "Stats", icon: BarChart3 },
 ] as const;
 
+const BADGE_HREFS: Record<string, keyof ReturnType<typeof useNavBadges>> = {
+  "/circle": "notifications",
+  "/groups": "groups",
+  "/dashboard": "goals",
+};
+
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const theme = useTheme();
+  const badges = useNavBadges();
   const [expanded, setExpanded] = useState(false);
   const [mounted, setMounted] = useState(false);
   const prevPath = useRef(pathname);
@@ -113,6 +121,8 @@ export function Sidebar({ user }: SidebarProps) {
           {DESKTOP_NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
             const Icon = item.icon;
+            const badgeKey = BADGE_HREFS[item.href];
+            const badgeCount = badgeKey ? badges[badgeKey] : 0;
 
             return (
               <Link
@@ -126,10 +136,17 @@ export function Sidebar({ user }: SidebarProps) {
                     : "text-ink-muted hover:bg-cream hover:text-ink"
                 )}
               >
-                <Icon
-                  className="h-[17px] w-[17px] flex-shrink-0"
-                  strokeWidth={isActive ? 2.2 : 1.75}
-                />
+                <span className="relative flex-shrink-0">
+                  <Icon
+                    className="h-[17px] w-[17px]"
+                    strokeWidth={isActive ? 2.2 : 1.75}
+                  />
+                  {badgeCount > 0 && !isActive && (
+                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose text-[8px] font-bold text-white leading-none">
+                      {badgeCount > 9 ? "9+" : badgeCount}
+                    </span>
+                  )}
+                </span>
                 <span className={cn("transition-all duration-200 truncate", showLabel ? "block" : "hidden")}>
                   {item.label}
                 </span>
@@ -291,6 +308,8 @@ export function Sidebar({ user }: SidebarProps) {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + "/");
             const Icon = item.icon;
+            const badgeKey = BADGE_HREFS[item.href];
+            const badgeCount = badgeKey ? badges[badgeKey] : 0;
 
             return (
               <Link
@@ -316,23 +335,24 @@ export function Sidebar({ user }: SidebarProps) {
                 )}
 
                 {/* Icon — filled pill when active */}
-                <span
-                  className={cn(
-                    "relative z-10 flex h-7 w-7 items-center justify-center rounded-xl transition-all duration-200",
-                    isActive
-                      ? "bg-ink text-cream-paper"
-                      : "bg-transparent"
+                <span className="relative z-10">
+                  <span
+                    className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded-xl transition-all duration-200",
+                      isActive ? "bg-ink text-cream-paper" : "bg-transparent"
+                    )}
+                    style={isActive ? { transform: "scale(1.05)" } : { transform: "scale(1)" }}
+                  >
+                    <Icon
+                      className="h-[17px] w-[17px]"
+                      strokeWidth={isActive ? 2.2 : 1.75}
+                    />
+                  </span>
+                  {badgeCount > 0 && !isActive && (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose text-[8px] font-bold text-white leading-none">
+                      {badgeCount > 9 ? "9+" : badgeCount}
+                    </span>
                   )}
-                  style={
-                    isActive
-                      ? { transform: "scale(1.05)" }
-                      : { transform: "scale(1)" }
-                  }
-                >
-                  <Icon
-                    className="h-[17px] w-[17px]"
-                    strokeWidth={isActive ? 2.2 : 1.75}
-                  />
                 </span>
 
                 {/* Label */}
