@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/notifications/[id]/route.ts
 // PATCH — mark a single notification as read
 

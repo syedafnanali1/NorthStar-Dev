@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/discover/route.ts
 // GET /api/groups/discover?q=&sort=popularity|newest|members&category=health
 // Public group search and browse for the Discovery page.

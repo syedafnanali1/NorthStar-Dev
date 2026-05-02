@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // POST /api/goals/:goalId/tasks — add a new intention/task to a goal
 // GET  /api/goals/:goalId/tasks — list all tasks for a goal
 

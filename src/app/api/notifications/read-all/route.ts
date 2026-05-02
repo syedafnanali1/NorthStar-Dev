@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/notifications/read-all/route.ts
 // POST — mark all notifications as read
 

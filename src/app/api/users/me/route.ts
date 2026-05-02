@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/users/me/route.ts
 // GET   /api/users/me — get current user profile
 // PATCH /api/users/me — update current user profile

@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/goals/[goalId]/checkin/route.ts
 // POST /api/groups/[id]/goals/[goalId]/checkin — log a check-in
 // GET  /api/groups/[id]/goals/[goalId]/checkin — get recent check-ins (my own)

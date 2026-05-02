@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { analyticsService } from "@/server/services/analytics.service";

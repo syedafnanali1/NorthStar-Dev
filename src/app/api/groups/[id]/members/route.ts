@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/members/route.ts
 // GET /api/groups/[id]/members — list active members with connection status
 

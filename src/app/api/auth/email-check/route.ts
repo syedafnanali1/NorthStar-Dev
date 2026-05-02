@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 

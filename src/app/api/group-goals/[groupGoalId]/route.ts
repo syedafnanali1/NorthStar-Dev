@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/[groupGoalId]/route.ts
 // GET    /api/group-goals/:id — full detail
 // PATCH  /api/group-goals/:id — update (creator only)

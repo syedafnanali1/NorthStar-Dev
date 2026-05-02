@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/cron/streak-alerts/route.ts
 // Runs as a re-engagement job and sends adaptive streak-risk alerts.
 

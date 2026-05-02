@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/requests/route.ts
 // GET   /api/groups/[id]/requests — list pending join requests (owner/admin)
 // PATCH /api/groups/[id]/requests — approve or reject a request (owner/admin)

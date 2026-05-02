@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/rate/route.ts
 // POST /api/groups/[id]/rate — submit a recommendation rating (member only)
 

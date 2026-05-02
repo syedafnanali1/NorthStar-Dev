@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/goals/suggest/route.ts
 // POST /api/groups/[id]/goals/suggest — AI-generated goal suggestion
 

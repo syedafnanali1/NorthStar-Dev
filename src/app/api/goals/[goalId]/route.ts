@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/goals/[goalId]/route.ts
 // GET    /api/goals/:goalId  — get one goal
 // PATCH  /api/goals/:goalId  — update goal

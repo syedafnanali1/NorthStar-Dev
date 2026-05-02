@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/[groupGoalId]/progress/route.ts
 // POST /api/group-goals/:id/progress — log a member contribution
 

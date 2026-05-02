@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { challengesService } from "@/server/services/challenges.service";
 import type { NextRequest } from "next/server";

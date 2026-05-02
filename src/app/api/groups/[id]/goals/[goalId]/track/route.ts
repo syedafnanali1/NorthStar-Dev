@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/goals/[goalId]/track/route.ts
 // POST /api/groups/[id]/goals/[goalId]/track — toggle "Add to My Calendar"
 

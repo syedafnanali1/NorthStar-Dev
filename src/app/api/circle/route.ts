@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/circle/route.ts
 // GET  /api/circle?feed=circle|community — get feed posts
 // POST /api/circle — create a post

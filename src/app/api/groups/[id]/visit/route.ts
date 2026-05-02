@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/visit/route.ts
 // POST /api/groups/[id]/visit — record a session visit (deduplicated per day).
 // Called client-side when a user opens the community page.

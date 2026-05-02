@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/circle/[postId]/comments/route.ts
 // GET  — fetch nested comments for a post
 // POST — add a comment (top-level or reply)

@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/daily-logs/route.ts
 // GET  /api/daily-logs?date=YYYY-MM-DD — get log for a specific date
 // POST /api/daily-logs — create or update a daily log

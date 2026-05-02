@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/chat/[postId]/react/route.ts
 // POST /api/groups/[id]/chat/[postId]/react — toggle an emoji reaction
 

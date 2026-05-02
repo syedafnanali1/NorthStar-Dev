@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/ai/coach/route.ts
 // POST /api/ai/coach — trigger an AI coaching action
 

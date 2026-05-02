@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/route.ts
 // GET  /api/group-goals — list groups the user belongs to
 // POST /api/group-goals — create a new group goal

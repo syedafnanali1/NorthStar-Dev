@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/chat/[postId]/comments/route.ts
 // GET  — fetch all comments for a post
 // POST — add a comment (member only, 100-word cap)

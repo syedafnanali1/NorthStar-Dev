@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/comments/[commentId]/route.ts
 // DELETE — soft-delete (own comment or post owner)
 // PATCH  — edit text if within 5 minutes

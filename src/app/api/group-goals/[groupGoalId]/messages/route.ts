@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/[groupGoalId]/messages/route.ts
 // GET  /api/group-goals/:id/messages — last 20 messages
 // POST /api/group-goals/:id/messages — send a message

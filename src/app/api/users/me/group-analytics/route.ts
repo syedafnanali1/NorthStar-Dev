@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/users/me/group-analytics/route.ts
 // GET /api/users/me/group-analytics — per-group engagement stats + nudges for the current user.
 

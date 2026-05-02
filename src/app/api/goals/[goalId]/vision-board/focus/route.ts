@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { visionBoardService } from "@/server/services/vision-board.service";

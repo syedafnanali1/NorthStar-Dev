@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/chat/route.ts
 // GET  /api/groups/[id]/chat — fetch posts (newest first, limit 30)
 // POST /api/groups/[id]/chat — create a new post (member only, 100-word cap)

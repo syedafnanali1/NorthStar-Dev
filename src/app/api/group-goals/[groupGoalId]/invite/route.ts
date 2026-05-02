@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/[groupGoalId]/invite/route.ts
 // POST /api/group-goals/:id/invite — owner invites users by account or email
 

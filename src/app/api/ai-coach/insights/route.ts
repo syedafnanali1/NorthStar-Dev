@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // GET /api/ai-coach/insights
 // Returns AI coach insights for a user, optionally filtered by goalId.
 // Supports ?tone=encouraging|straightforward|tough to colour the language.

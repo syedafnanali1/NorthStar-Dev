@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/circle/[postId]/react/route.ts
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";

@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/goals/[goalId]/progress/route.ts
 // POST /api/goals/:goalId/progress — log progress for a goal
 

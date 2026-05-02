@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/circle/connect/route.ts
 // POST — send a circle connection request
 // PATCH — accept or decline an incoming request

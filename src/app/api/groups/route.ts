@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/route.ts
 // POST /api/groups — create a new community group
 // GET  /api/groups — list groups the current user belongs to

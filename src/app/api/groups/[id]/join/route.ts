@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/join/route.ts
 // POST /api/groups/[id]/join — submit a join request for a public group
 

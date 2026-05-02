@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/users/[userId]/profile/route.ts
 // Returns public profile data. Connected users see more detail.
 

@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/analytics/route.ts
 // GET /api/analytics?range=30 — returns full analytics data
 

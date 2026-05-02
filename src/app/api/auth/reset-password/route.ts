@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import bcrypt from "bcryptjs";
 import { and, eq, gt } from "drizzle-orm";
 import { NextResponse } from "next/server";

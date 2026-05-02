@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/users/search/route.ts
 // GET ?q=searchterm — return users matching name, username, or email with connection status
 

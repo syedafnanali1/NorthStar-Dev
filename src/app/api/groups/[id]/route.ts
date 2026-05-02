@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/groups/[id]/route.ts
 // GET    /api/groups/[id] — public group profile
 // PATCH  /api/groups/[id] — update group (owner/admin)

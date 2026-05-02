@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // PATCH  /api/goals/:goalId/tasks/:taskId — edit an intention
 // DELETE /api/goals/:goalId/tasks/:taskId — remove an intention
 

@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/[groupGoalId]/join/route.ts
 // POST /api/group-goals/:id/join — request to join a group
 

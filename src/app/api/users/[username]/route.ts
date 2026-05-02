@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/users/[username]/route.ts
 // GET public profile by username
 

@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { addDays } from "date-fns";
 import { NextResponse } from "next/server";
 import { z } from "zod";

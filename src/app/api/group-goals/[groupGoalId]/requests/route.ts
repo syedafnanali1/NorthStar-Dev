@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/[groupGoalId]/requests/route.ts
 // GET   /api/group-goals/:id/requests — list pending join requests (owner only)
 // PATCH /api/group-goals/:id/requests — approve/reject request (owner only)

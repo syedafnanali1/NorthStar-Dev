@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { weeklyDigestService } from "@/server/services/weekly-digest.service";
 import type { NextRequest } from "next/server";

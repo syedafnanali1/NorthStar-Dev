@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/goals/grid/toggle/route.ts
 // POST - toggle a goal completion cell for a specific date in the grid.
 

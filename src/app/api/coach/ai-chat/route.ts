@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/coach/ai-chat/route.ts
 // AI chat endpoint for the Coach Dashboard.
 // Sends aggregated team stats as context with each message.

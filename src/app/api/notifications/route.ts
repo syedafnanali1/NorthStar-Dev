@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/notifications/route.ts
 // GET — returns { notifications, unreadCount }
 

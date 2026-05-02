@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/group-goals/[groupGoalId]/intentions/route.ts
 // GET list intentions, POST create intention or comment or idea submission
 

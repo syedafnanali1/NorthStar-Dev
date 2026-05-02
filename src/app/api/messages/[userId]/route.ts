@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/messages/[userId]/route.ts
 // GET  — fetch conversation between current user and target user (requires accepted connection)
 // POST — send a new direct message

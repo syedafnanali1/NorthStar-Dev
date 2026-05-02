@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/goals/grid/route.ts
 // GET /api/goals/grid?month=YYYY-MM
 // Returns active goals + daily completion map for the month.

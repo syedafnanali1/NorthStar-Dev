@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 // src/app/api/goals/[goalId]/moments/route.ts
 // GET  /api/goals/:goalId/moments — list moments for a goal
 // POST /api/goals/:goalId/moments — add a moment to a goal
