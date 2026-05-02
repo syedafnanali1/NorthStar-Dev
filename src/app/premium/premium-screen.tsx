@@ -5,8 +5,7 @@
 // Payment provider is not yet integrated — handleUpgrade logs intent and shows a toast.
 
 import { useState } from "react";
-import Link from "next/link";
-import { Check, Mail, Star, Users, Zap } from "lucide-react";
+import { Check, FlaskConical, Loader2, Mail, Star, Users, Zap } from "lucide-react";
 import { PLAN_ORDER, PLANS, TRIAL_DAYS, type PlanId } from "@/config/subscriptionConfig";
 import { trialDaysRemaining, type SubscriptionUser } from "@/utils/subscriptionUtils";
 
@@ -18,6 +17,47 @@ function handleUpgrade(planId: PlanId) {
   // TODO: wire up to Stripe / RevenueCat when payment provider is configured
   console.info("[upgrade] intent", planId);
   alert(`Upgrade to ${PLANS[planId].name} — payment integration coming soon.`);
+}
+
+function TestActivateProButton() {
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  async function activate() {
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/billing/subscription", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: "pro", status: "active" }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setStatus("done");
+      setTimeout(() => window.location.reload(), 800);
+    } catch {
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 2000);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={activate}
+      disabled={status === "loading" || status === "done"}
+      className="flex items-center gap-2 rounded-xl border border-dashed border-ink/20 bg-cream px-4 py-2.5 text-sm font-medium text-ink-muted transition hover:border-ink/40 hover:text-ink disabled:opacity-50"
+    >
+      {status === "loading" ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <FlaskConical className="h-4 w-4" />
+      )}
+      {status === "done"
+        ? "Pro activated — reloading…"
+        : status === "error"
+        ? "Error — try again"
+        : "Test: Activate Pro"}
+    </button>
+  );
 }
 
 const PLAN_ICONS: Record<PlanId, React.ReactNode> = {
@@ -211,6 +251,12 @@ export function PremiumScreen({ user }: PremiumScreenProps) {
         >
           Restore Purchases
         </button>
+      </div>
+
+      {/* Dev test mode */}
+      <div className="border-t border-cream-dark pt-4 flex flex-col items-center gap-2">
+        <p className="text-xs text-ink-muted/60">Developer testing</p>
+        <TestActivateProButton />
       </div>
     </div>
   );

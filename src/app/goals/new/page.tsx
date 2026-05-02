@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import { requireAuth, requireAuthUser } from "@/lib/auth/helpers";
 import { AppLayout } from "@/components/layout/app-layout";
+import { subscriptionsService } from "@/server/services/subscriptions.service";
 import { NewGoalWizard } from "./new-goal-wizard";
 
 export const metadata: Metadata = {
@@ -10,7 +11,14 @@ export const metadata: Metadata = {
 
 export default async function NewGoalPage() {
   await requireAuth();
-  await requireAuthUser();
+  const user = await requireAuthUser();
+
+  let hasPremiumAI = false;
+  try {
+    hasPremiumAI = await subscriptionsService.isPro(user.id);
+  } catch {
+    // Non-fatal — gate stays closed
+  }
 
   return (
     <AppLayout contentClassName="max-w-3xl lg:max-w-xl">
@@ -25,7 +33,7 @@ export default async function NewGoalPage() {
           Turn an intention into something measurable, emotionally grounded, and easy to revisit.
         </p>
       </div>
-      <NewGoalWizard />
+      <NewGoalWizard hasPremiumAI={hasPremiumAI} />
     </AppLayout>
   );
 }

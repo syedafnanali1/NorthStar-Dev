@@ -1,819 +1,716 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+// src/app/goals/new/new-goal-wizard.tsx
+// 5-step goal creation wizard matching spec §05:
+//   Step 1 — Name + icon + category
+//   Step 2 — Deadline (presets + calendar)
+//   Step 3 — Solo or Group
+//   Step 4 — Intentions / schedule
+//   Step 5 — Review & Save
+
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ArrowRight, Plus, Sparkles } from "lucide-react";
-import { createGoalSchema, type CreateGoalInput } from "@/lib/validators/goals";
+import { ArrowLeft, ArrowRight, Sparkles, Lock, X, Plus, Check, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
 import { DecomposeModal, type DecomposedGoal } from "@/components/ai/decompose-modal";
-import { GoalIntentionsSheet } from "@/components/goals/goal-intentions-sheet";
 import {
-  computeCadenceTarget,
-  ensureSmartGoalTasks,
   inferGoalSmartSuggestion,
+  ensureSmartGoalTasks,
+  computeCadenceTarget,
   makeAutoTaskSuggestion,
   type MoneyCadence,
 } from "@/lib/goal-intelligence";
 
-const CATEGORIES = [
-  {
-    value: "health" as const,
-    label: "Health & Fitness",
-    emoji: "🏃",
-    hint: "km · miles · hours · reps",
-    color: "#6B8C7A",
-  },
-  {
-    value: "finance" as const,
-    label: "Finance",
-    emoji: "💰",
-    hint: "$ saved · debt paid",
-    color: "#5B7EA6",
-  },
-  {
-    value: "writing" as const,
-    label: "Writing & Creative",
-    emoji: "✍️",
-    hint: "words · pages · chapters",
-    color: "#C4963A",
-  },
-  {
-    value: "body" as const,
-    label: "Body Composition",
-    emoji: "⚖️",
-    hint: "kg · lbs · body fat %",
-    color: "#B5705B",
-  },
-  {
-    value: "mindset" as const,
-    label: "Mindset & Learning",
-    emoji: "🧠",
-    hint: "hours · sessions · books",
-    color: "#7B6FA0",
-  },
-  {
-    value: "custom" as const,
-    label: "Custom",
-    emoji: "⭐",
-    hint: "Define your own unit",
-    color: "#C4963A",
-  },
-] as const;
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const COLOR_OPTIONS = [
-  "#C4963A",
-  "#6B8C7A",
-  "#B5705B",
-  "#5B7EA6",
-  "#7B6FA0",
-  "#4A8562",
-  "#8B4A6B",
-  "#4A6B8B",
-  "#8B6B4A",
-  "#6B4A8B",
+type Category = "health" | "finance" | "writing" | "body" | "mindset" | "custom";
+
+interface Intention {
+  id: string;
+  label: string;
+  days: string[];   // ["Mon", "Wed", "Fri"]
+  time: string;     // "06:30"
+  duration: number; // minutes
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const CATEGORIES: { value: Category; label: string; emoji: string; color: string }[] = [
+  { value: "health",  label: "Health",   emoji: "🏃", color: "#6B8C7A" },
+  { value: "finance", label: "Finance",  emoji: "💰", color: "#5B7EA6" },
+  { value: "writing", label: "Writing",  emoji: "✍️", color: "#C4963A" },
+  { value: "body",    label: "Body",     emoji: "⚖️", color: "#B5705B" },
+  { value: "mindset", label: "Learning", emoji: "🧠", color: "#7B6FA0" },
+  { value: "custom",  label: "Custom",   emoji: "⭐", color: "#C4963A" },
 ];
 
-export function NewGoalWizard() {
+const CATEGORY_EMOJIS: Record<Category, string[]> = {
+  health:  ["🏃", "💪", "🚴", "🧘", "🏊", "⚽"],
+  finance: ["💰", "📈", "🏦", "💳", "🎯", "📊"],
+  writing: ["✍️", "📝", "📖", "🖊️", "📚", "🎨"],
+  body:    ["⚖️", "🥗", "💪", "🏋️", "🧘", "🥑"],
+  mindset: ["🧠", "📚", "🎓", "🔬", "💡", "🎯"],
+  custom:  ["⭐", "🎯", "🔥", "✨", "🚀", "💫"],
+};
+
+const DEADLINE_PRESETS = [
+  { label: "1 week",    days: 7 },
+  { label: "1 month",   days: 30 },
+  { label: "3 months",  days: 90 },
+  { label: "6 months",  days: 180 },
+];
+
+const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function toInputDate(date: Date): string {
+  return date.toISOString().split("T")[0]!;
+}
+
+function daysFromNow(date: Date): number {
+  return Math.round((date.getTime() - Date.now()) / 86400000);
+}
+
+function nanoid6() {
+  return Math.random().toString(36).slice(2, 8);
+}
+
+// ─── Mini calendar ────────────────────────────────────────────────────────────
+
+function MiniCalendar({ selected, onSelect }: { selected: Date | null; onSelect: (d: Date) => void }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(selected?.getFullYear() ?? today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(selected?.getMonth() ?? today.getMonth());
+
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  // Adjust to Mon-first
+  const startOffset = (firstDay + 6) % 7;
+  const cells: (number | null)[] = [...Array(startOffset).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  }
+
+  return (
+    <div className="rounded-2xl border border-cream-dark bg-cream p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <button type="button" onClick={prevMonth} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-cream-dark transition">
+          <ChevronLeft className="h-4 w-4 text-ink-muted" />
+        </button>
+        <span className="text-sm font-semibold text-ink">{MONTH_NAMES[viewMonth]} {viewYear}</span>
+        <button type="button" onClick={nextMonth} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-cream-dark transition">
+          <ChevronRight className="h-4 w-4 text-ink-muted" />
+        </button>
+      </div>
+      {/* Day headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {["M","T","W","T","F","S","S"].map((d, i) => (
+          <span key={i} className="text-center text-[10px] font-semibold text-ink-muted py-1">{d}</span>
+        ))}
+      </div>
+      {/* Cells */}
+      <div className="grid grid-cols-7 gap-0.5">
+        {cells.map((day, i) => {
+          if (!day) return <div key={i} />;
+          const date = new Date(viewYear, viewMonth, day);
+          const isPast = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          const isSelected = selected && date.toDateString() === selected.toDateString();
+          return (
+            <button key={i} type="button" disabled={isPast}
+              onClick={() => onSelect(date)}
+              className={cn(
+                "flex h-8 w-full items-center justify-center rounded-lg text-sm transition",
+                isPast ? "text-ink-muted/30 cursor-not-allowed" : "hover:bg-cream-dark cursor-pointer",
+                isSelected ? "bg-gold text-white font-semibold hover:bg-gold/90" : "text-ink"
+              )}>
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Step indicator ───────────────────────────────────────────────────────────
+
+function StepBar({ step, total }: { step: number; total: number }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {Array.from({ length: total }, (_, i) => (
+        <div key={i} className={cn("h-1.5 flex-1 rounded-full transition-all duration-400",
+          i < step ? "bg-gold" : i === step - 1 ? "bg-gold" : "bg-cream-dark")} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Main wizard ──────────────────────────────────────────────────────────────
+
+export function NewGoalWizard({ hasPremiumAI = false }: { hasPremiumAI?: boolean }) {
+  const router = useRouter();
   const [step, setStep] = useState(1);
-  const [tasks, setTasks] = useState<{ text: string; incrementValue: string }[]>([]);
-  const [newTask, setNewTask] = useState("");
-  const [newTaskIncrement, setNewTaskIncrement] = useState("");
-  const [smartAmount, setSmartAmount] = useState("");
-  const [moneyCadence, setMoneyCadence] = useState<MoneyCadence>("daily");
-  const [milestoneInput, setMilestoneInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [decomposeOpen, setDecomposeOpen] = useState(false);
-  const [createdGoalId, setCreatedGoalId] = useState<string | null>(null);
-  const [createdGoalTitle, setCreatedGoalTitle] = useState<string | null>(null);
-  const [intentionsOpen, setIntentionsOpen] = useState(false);
-  const router = useRouter();
+  const [showAILock, setShowAILock] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    formState: { errors },
-  } = useForm<CreateGoalInput>({
-    resolver: zodResolver(createGoalSchema),
-    defaultValues: {
-      color: "#C4963A",
-      isPublic: false,
-      milestones: [],
-      tasks: [],
-    },
-  });
+  // Step 1
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<Category | null>(null);
+  const [emoji, setEmoji] = useState("⭐");
 
-  const selectedCategory = watch("category");
-  const selectedColor = watch("color");
-  const watchedTitle = watch("title") ?? "";
-  const watchedWhy = watch("why") ?? "";
-  const watchedUnit = watch("unit") ?? "";
-  const watchedStartDate = watch("startDate") ?? "";
-  const watchedEndDate = watch("endDate") ?? "";
-  const watchedTargetValue = watch("targetValue");
+  // Step 2
+  const [deadline, setDeadline] = useState<Date | null>(null);
+  const [presetIdx, setPresetIdx] = useState<number | null>(1); // default 1 month
+  const [showCalendar, setShowCalendar] = useState(false);
 
+  // Step 3
+  const [goalType, setGoalType] = useState<"solo" | "group">("solo");
+
+  // Step 4
+  const [intentions, setIntentions] = useState<Intention[]>([]);
+  const [newIntentionLabel, setNewIntentionLabel] = useState("Morning session");
+  const [newIntentionTime, setNewIntentionTime] = useState("07:00");
+  const [newIntentionDuration, setNewIntentionDuration] = useState(30);
+  const [newIntentionDays, setNewIntentionDays] = useState<string[]>(["Mon", "Wed", "Fri"]);
+  const [addingIntention, setAddingIntention] = useState(false);
+
+  // Smart detection
   const smartSuggestion = useMemo(
-    () => inferGoalSmartSuggestion(watchedTitle, watchedWhy, selectedCategory ?? null),
-    [watchedTitle, watchedWhy, selectedCategory]
+    () => inferGoalSmartSuggestion(title, "", category),
+    [title, category]
   );
 
-  const smartAmountNumber = useMemo(() => {
-    const parsed = Number(smartAmount);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  }, [smartAmount]);
-
+  // Auto-detect category from title
   useEffect(() => {
-    if (!selectedCategory && watchedTitle.trim().length >= 3) {
-      setValue("category", smartSuggestion.category);
-      setValue(
-        "color",
-        CATEGORIES.find((c) => c.value === smartSuggestion.category)?.color ?? "#C4963A"
-      );
+    if (!category && title.trim().length >= 3) {
+      setCategory(smartSuggestion.category);
+      setEmoji(CATEGORY_EMOJIS[smartSuggestion.category]?.[0] ?? "⭐");
     }
-    if (!watchedUnit && smartSuggestion.unit) {
-      setValue("unit", smartSuggestion.unit);
+  }, [title, smartSuggestion.category, category]);
+
+  // Default deadline to 1 month when first entering step 2
+  useEffect(() => {
+    if (step === 2 && !deadline) {
+      setDeadline(addDays(new Date(), 30));
     }
-  }, [
-    selectedCategory,
-    setValue,
-    smartSuggestion.category,
-    smartSuggestion.unit,
-    watchedTitle,
-    watchedUnit,
-  ]);
+  }, [step, deadline]);
 
-  const addSmartTask = () => {
-    const suggestedTask = makeAutoTaskSuggestion({
-      title: watchedTitle || "this goal",
-      intent: smartSuggestion.intent,
-      amount: smartAmountNumber,
-      unit: watchedUnit || smartSuggestion.unit,
-      cadence: moneyCadence,
-      startDate: watchedStartDate || null,
-      endDate: watchedEndDate || null,
-      targetValue:
-        typeof watchedTargetValue === "number" && Number.isFinite(watchedTargetValue)
-          ? watchedTargetValue
-          : null,
-    });
+  // ── AI handlers ──────────────────────────────────────────────────────────────
 
-    if (!suggestedTask.text) return;
+  function handleAIClick() {
+    if (hasPremiumAI) setDecomposeOpen(true);
+    else setShowAILock((v) => !v);
+  }
 
-    setTasks((current) => {
-      if (current.some((task) => task.text.toLowerCase() === suggestedTask.text.toLowerCase())) {
-        return current;
-      }
-      return [
-        ...current,
-        {
-          text: suggestedTask.text,
-          incrementValue: suggestedTask.incrementValue ? String(suggestedTask.incrementValue) : "",
-        },
-      ].slice(0, 10);
-    });
-  };
-
-  const addTask = () => {
-    if (newTask.trim() && tasks.length < 10) {
-      setTasks((current) => [...current, { text: newTask.trim(), incrementValue: newTaskIncrement.trim() }]);
-      setNewTask("");
-      setNewTaskIncrement("");
-    }
-  };
-
-  const removeTask = (taskIndex: number) => {
-    setTasks((current) => current.filter((_, index) => index !== taskIndex));
-  };
-
-  const applyDecomposed = (goal: DecomposedGoal) => {
-    setValue("title", goal.title);
-    setValue("category", goal.category);
-    setValue("color", CATEGORIES.find((c) => c.value === goal.category)?.color ?? "#C4963A");
-    if (goal.why) setValue("why", goal.why);
-    if (goal.targetValue !== null) setValue("targetValue", goal.targetValue);
-    if (goal.unit) setValue("unit", goal.unit);
-    if (goal.suggestedEndDate) setValue("endDate", goal.suggestedEndDate);
-    if (goal.suggestedMilestones.length > 0) {
-      setMilestoneInput(goal.suggestedMilestones.join(", "));
-    }
+  function applyDecomposed(goal: DecomposedGoal) {
+    setTitle(goal.title);
+    setCategory(goal.category);
+    setEmoji(CATEGORY_EMOJIS[goal.category]?.[0] ?? "⭐");
+    if (goal.suggestedEndDate) setDeadline(new Date(goal.suggestedEndDate));
     if (goal.suggestedTasks.length > 0) {
-      setTasks(goal.suggestedTasks.map((text) => ({ text, incrementValue: "" })));
-    }
-    if (goal.targetValue !== null) {
-      setSmartAmount(String(goal.targetValue));
-    }
-    if (goal.category === "finance") {
-      setMoneyCadence("daily");
+      setIntentions(goal.suggestedTasks.slice(0, 3).map((t) => ({
+        id: nanoid6(),
+        label: t,
+        days: ["Mon", "Wed", "Fri"],
+        time: "07:00",
+        duration: 30,
+      })));
     }
     toast("Goal pre-filled by AI ✨");
-  };
+    setStep(2);
+  }
 
-  const onSubmit = async (data: CreateGoalInput) => {
+  // ── Intention helpers ──────────────────────────────────────────────────────
+
+  function addIntention() {
+    if (!newIntentionLabel.trim() || newIntentionDays.length === 0) return;
+    setIntentions((prev) => [...prev, {
+      id: nanoid6(),
+      label: newIntentionLabel.trim(),
+      days: newIntentionDays,
+      time: newIntentionTime,
+      duration: newIntentionDuration,
+    }]);
+    setAddingIntention(false);
+    setNewIntentionLabel("Morning session");
+    setNewIntentionTime("07:00");
+    setNewIntentionDuration(30);
+    setNewIntentionDays(["Mon", "Wed", "Fri"]);
+  }
+
+  function removeIntention(id: string) {
+    setIntentions((prev) => prev.filter((i) => i.id !== id));
+  }
+
+  function toggleDay(day: string) {
+    setNewIntentionDays((prev) => prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]);
+  }
+
+  function formatTime(t: string): string {
+    const [h, m] = t.split(":").map(Number);
+    if (h === undefined || m === undefined) return t;
+    const ampm = h! >= 12 ? "pm" : "am";
+    const hour = h! % 12 || 12;
+    return `${hour}:${String(m).padStart(2, "0")}${ampm}`;
+  }
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+
+  async function handleSubmit() {
+    if (!title.trim() || title.trim().length < 3) { toast("Please enter a goal title", "error"); return; }
     setSubmitting(true);
     try {
-      const milestones = milestoneInput
-        .split(",")
-        .map((milestone) => milestone.trim())
-        .filter(Boolean);
-
-      const resolvedCategory = data.category ?? smartSuggestion.category;
-      const manualTargetValue =
-        typeof data.targetValue === "number" && Number.isFinite(data.targetValue) && data.targetValue > 0
-          ? data.targetValue
-          : undefined;
-      const computedMoneyTarget =
-        smartSuggestion.intent === "money_saving" && smartAmountNumber
-          ? computeCadenceTarget({
-              amount: smartAmountNumber,
-              cadence: moneyCadence,
-              startDate: data.startDate ?? watchedStartDate ?? null,
-              endDate: data.endDate ?? watchedEndDate ?? null,
-            })
-          : null;
-      const resolvedTargetValue =
-        manualTargetValue ??
-        (smartSuggestion.intent === "weight_loss" ? smartAmountNumber ?? undefined : undefined) ??
-        (computedMoneyTarget ?? undefined);
-      const resolvedUnit =
-        data.unit?.trim() || watchedUnit || smartSuggestion.unit || undefined;
-
-      const preparedTasks = ensureSmartGoalTasks({
-        title: data.title,
-        intent: smartSuggestion.intent,
-        unit: resolvedUnit ?? null,
-        amount: smartAmountNumber ?? resolvedTargetValue ?? null,
-        cadence: moneyCadence,
-        startDate: data.startDate ?? watchedStartDate ?? null,
-        endDate: data.endDate ?? watchedEndDate ?? null,
-        targetValue: resolvedTargetValue ?? null,
-        tasks,
-      });
+      const resolvedCategory = category ?? smartSuggestion.category;
+      const tasks = intentions.length > 0
+        ? intentions.map((i) => ({ text: i.label, isRepeating: true, incrementValue: undefined }))
+        : ensureSmartGoalTasks({ title: title.trim(), intent: smartSuggestion.intent, unit: null, amount: null, cadence: "daily" as MoneyCadence, startDate: null, endDate: deadline ? toInputDate(deadline) : null, targetValue: null, tasks: [] }).map((t) => ({ text: t.text, isRepeating: true, incrementValue: t.incrementValue }));
 
       const response = await fetch("/api/goals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...data,
+          title: title.trim(),
           category: resolvedCategory,
-          unit: resolvedUnit,
-          targetValue: resolvedTargetValue,
-          milestones,
-          tasks: preparedTasks.map((task) => ({
-            text: task.text,
-            isRepeating: true,
-            incrementValue: task.incrementValue,
-          })),
+          color: CATEGORIES.find((c) => c.value === resolvedCategory)?.color ?? "#C4963A",
+          emoji,
+          endDate: deadline ? toInputDate(deadline) : undefined,
+          isPublic: goalType === "group",
+          tasks,
+          milestones: [],
         }),
       });
 
       if (!response.ok) {
-        const error = (await response.json()) as { error?: string };
-        throw new Error(error.error ?? "Failed to create goal");
+        const err = (await response.json()) as { error?: string };
+        throw new Error(err.error ?? "Failed to create goal");
       }
 
-      const created = (await response.json()) as { goal?: { id: string; title: string } };
       toast("Goal created! ⭐");
-
-      if (created.goal?.id) {
-        setCreatedGoalId(created.goal.id);
-        setCreatedGoalTitle(created.goal.title ?? data.title);
-        setIntentionsOpen(true);
-      } else {
-        router.push("/dashboard");
-        router.refresh();
-      }
-    } catch (error) {
-      toast(
-        error instanceof Error ? error.message : "Failed to create goal",
-        "error"
-      );
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to create goal", "error");
     } finally {
       setSubmitting(false);
     }
-  };
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const resolvedCategory = category ?? smartSuggestion.category;
+  const categoryData = CATEGORIES.find((c) => c.value === resolvedCategory);
 
   return (
-    <form
-      onSubmit={handleSubmit(onSubmit)}
-      className="panel-shell p-5 sm:p-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none"
-    >
-      <div className="flex flex-col gap-4 border-b border-cream-dark pb-5 lg:mb-8 lg:border-0 lg:pb-0">
-        <div className="flex items-center justify-between gap-4 lg:hidden">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-ink-muted">
-            Step {step} of 3
-          </p>
-          <p className="text-sm text-ink-muted">Plant a New Star</p>
+    <>
+      {/* Progress + step label */}
+      <div className="mb-6 space-y-3">
+        <div className="flex items-center justify-between text-xs text-ink-muted font-medium">
+          <span>Step {step} of 5</span>
+          <span>{["Name", "Deadline", "Type", "Intentions", "Review"][step - 1]}</span>
         </div>
-        <div className="flex gap-2">
-          {[1, 2, 3].map((currentStep) => (
-            <div
-              key={currentStep}
-              className={cn(
-                "h-1.5 flex-1 rounded-full transition-all",
-                currentStep < step
-                  ? "bg-gold"
-                  : currentStep === step
-                  ? "bg-ink"
-                  : "bg-cream-dark"
-              )}
-            />
-          ))}
-        </div>
+        <StepBar step={step} total={5} />
       </div>
 
-      {step === 1 ? (
-        <div className="space-y-6 pt-6 lg:pt-0">
-          <div className="flex items-start justify-between gap-4">
+      <div className="panel-shell p-5 sm:p-6 space-y-6">
+
+        {/* ── Step 1: Name + icon + category ──────────────────────────── */}
+        {step === 1 && (
+          <>
             <div>
-              <h2 className="text-2xl font-serif font-semibold text-ink">
-                Plant a New Star
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-ink-muted">
-                Choose the kind of goal you want to grow, then name it clearly.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDecomposeOpen(true)}
-              className="btn-ghost shrink-0 gap-1.5 rounded-2xl border border-gold/30 bg-gold/5 px-3 py-2 text-xs font-semibold text-gold hover:bg-gold/10"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Let AI help me define this
-            </button>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {CATEGORIES.map((category) => {
-              const selected = selectedCategory === category.value;
-
-              return (
-                <button
-                  key={category.value}
-                  type="button"
-                  onClick={() => {
-                    setValue("category", category.value);
-                    setValue("color", category.color);
-                  }}
-                  className={cn(
-                    "min-h-[116px] rounded-[1.5rem] border p-4 text-left transition-all",
-                    selected
-                      ? "border-ink bg-ink text-cream-paper"
-                      : "border-cream-dark bg-white/75 text-ink hover:border-ink-muted"
-                  )}
-                >
-                  <span className="text-2xl">{category.emoji}</span>
-                  <span className="mt-3 block text-base font-semibold">
-                    {category.label}
-                  </span>
-                  <span
-                    className={cn(
-                      "mt-1 block text-sm",
-                      selected ? "text-cream-paper/70" : "text-ink-muted"
-                    )}
-                  >
-                    {category.hint}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {errors.category ? (
-            <p className="text-sm text-rose">{errors.category.message}</p>
-          ) : null}
-
-          <div className="space-y-2">
-            <label className="form-label">Goal Title</label>
-            <input
-              {...register("title")}
-              placeholder="e.g. Run a marathon"
-              className={cn("form-input min-h-[52px] rounded-2xl", errors.title && "border-rose")}
-            />
-            {errors.title ? (
-              <p className="text-sm text-rose">{errors.title.message}</p>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <label className="form-label">Why</label>
-            <textarea
-              {...register("why")}
-              placeholder="Why does this matter to you emotionally?"
-              className="form-input h-28 resize-none rounded-[1.5rem] font-serif italic"
-            />
-          </div>
-
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="btn-secondary min-h-[48px] rounded-2xl px-5"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const title = watch("title");
-                if (!title || title.length < 3) {
-                  toast("Please enter a goal title", "error");
-                  return;
-                }
-                if (!selectedCategory) {
-                  setValue("category", smartSuggestion.category);
-                  setValue(
-                    "color",
-                    CATEGORIES.find((c) => c.value === smartSuggestion.category)?.color ?? "#C4963A"
-                  );
-                }
-                if (!watch("unit") && smartSuggestion.unit) {
-                  setValue("unit", smartSuggestion.unit);
-                }
-                setStep(2);
-              }}
-              className="btn-primary min-h-[48px] rounded-2xl px-5"
-            >
-              Next: Measure it →
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {step === 2 ? (
-        <div className="space-y-6 pt-6 lg:pt-0">
-          <div>
-            <h2 className="text-2xl font-serif font-semibold text-ink">
-              Measure it
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-ink-muted">
-              Define how progress is tracked and when the goal should end.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-gold/25 bg-gold/5 px-4 py-3 text-sm text-ink-muted">
-            <p className="font-semibold text-ink">
-              Smart detection:{" "}
-              {smartSuggestion.intent === "reading"
-                ? "Reading goal"
-                : smartSuggestion.intent === "weight_loss"
-                ? "Weight goal"
-                : smartSuggestion.intent === "money_saving"
-                ? "Money goal"
-                : "Custom goal"}
-            </p>
-            <p className="mt-1">
-              {smartSuggestion.intent === "reading"
-                ? "We will track this in pages and auto-log your page amount when intentions are completed."
-                : smartSuggestion.intent === "weight_loss"
-                ? "Choose unit and target loss. We will auto-distribute progress over your selected timeline."
-                : smartSuggestion.intent === "money_saving"
-                ? "Choose amount + cadence. We will auto-calculate target progress when you set a deadline."
-                : "You can still set a custom metric and unit."}
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="form-label">
-                {smartSuggestion.intent === "reading"
-                  ? smartSuggestion.quantityLabel
-                  : smartSuggestion.intent === "weight_loss"
-                  ? smartSuggestion.quantityLabel
-                  : smartSuggestion.intent === "money_saving"
-                  ? smartSuggestion.quantityLabel
-                  : "Target Amount"}
-              </label>
-              <input
-                value={
-                  smartSuggestion.intent === "generic"
-                    ? (watchedTargetValue ?? "")
-                    : smartAmount
-                }
-                onChange={(event) => {
-                  if (smartSuggestion.intent === "generic") {
-                    setValue("targetValue", event.target.value ? Number(event.target.value) : undefined);
-                    return;
-                  }
-                  setSmartAmount(event.target.value);
-                  if (smartSuggestion.intent === "weight_loss" && event.target.value) {
-                    setValue("targetValue", Number(event.target.value));
-                  }
-                }}
-                type="number"
-                min="0"
-                step="any"
-                placeholder="42.2"
-                className={cn("form-input min-h-[52px] rounded-2xl", errors.targetValue && "border-rose")}
-              />
+              <h2 className="text-2xl font-serif font-semibold text-ink">What&apos;s your goal?</h2>
+              <p className="mt-1 text-sm text-ink-muted">Be specific — tap to edit anytime</p>
             </div>
 
-            <div className="space-y-2">
-              <label className="form-label">Unit</label>
-              {smartSuggestion.intent === "reading" ? (
-                <input
-                  value="pages"
-                  readOnly
-                  className="form-input min-h-[52px] rounded-2xl bg-cream"
-                />
-              ) : smartSuggestion.intent === "money_saving" ? (
-                <select
-                  value={watchedUnit || "$"}
-                  onChange={(event) => setValue("unit", event.target.value)}
-                  className="form-input min-h-[52px] rounded-2xl"
-                >
-                  {smartSuggestion.unitOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              ) : smartSuggestion.intent === "weight_loss" ? (
-                <select
-                  value={watchedUnit || smartSuggestion.unit || "lb"}
-                  onChange={(event) => setValue("unit", event.target.value)}
-                  className="form-input min-h-[52px] rounded-2xl"
-                >
-                  {smartSuggestion.unitOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  {...register("unit")}
-                  placeholder="km"
-                  className="form-input min-h-[52px] rounded-2xl"
-                />
+            {/* AI button */}
+            <div>
+              <button type="button" onClick={handleAIClick}
+                className={cn("w-full flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all",
+                  hasPremiumAI ? "border-gold/40 bg-gold/5 hover:bg-gold/10" : "border-cream-dark bg-cream hover:border-ink-muted/30")}>
+                {hasPremiumAI ? <Sparkles className="h-4 w-4 text-gold shrink-0" /> : <Lock className="h-4 w-4 text-ink-muted shrink-0" />}
+                <span className={cn("text-sm font-semibold", hasPremiumAI ? "text-gold" : "text-ink-muted")}>
+                  {hasPremiumAI ? "Generate with AI" : "Generate with AI"}
+                  {!hasPremiumAI && <span className="ml-2 text-[10px] font-semibold text-ink-muted/60 uppercase tracking-wider">Premium</span>}
+                </span>
+              </button>
+              {showAILock && !hasPremiumAI && (
+                <div className="mt-2 rounded-2xl border border-gold/25 bg-gold/5 p-4 flex gap-3 items-start">
+                  <Lock className="h-4 w-4 text-gold shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-ink">AI Goal Creation is Premium</p>
+                    <p className="mt-1 text-xs text-ink-muted leading-5">Describe your goal in plain language — Claude generates milestones, habits, and a target.</p>
+                    <div className="mt-3 flex gap-2">
+                      <a href="/premium" className="inline-flex items-center gap-1.5 rounded-xl bg-gold px-3 py-1.5 text-xs font-semibold text-ink hover:opacity-90 transition">
+                        <Sparkles className="h-3 w-3" />Unlock Premium
+                      </a>
+                      <button type="button" onClick={() => setShowAILock(false)} className="rounded-xl border border-cream-dark px-3 py-1.5 text-xs text-ink-muted hover:text-ink transition">Dismiss</button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
 
-          {smartSuggestion.intent === "money_saving" ? (
+            {/* Title input */}
             <div className="space-y-2">
-              <label className="form-label">Cadence</label>
-              <select
-                value={moneyCadence}
-                onChange={(event) => setMoneyCadence(event.target.value as MoneyCadence)}
-                className="form-input min-h-[52px] rounded-2xl"
-              >
-                {smartSuggestion.cadenceOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => { setTitle(e.target.value); setCategory(null); }}
+                placeholder="e.g. Run a 5K"
+                maxLength={120}
+                className="form-input min-h-[56px] rounded-2xl text-lg font-medium"
+                autoFocus
+              />
+              {category && (
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-cream-dark bg-cream px-2.5 py-1 text-xs font-semibold text-ink-muted">
+                    {categoryData?.emoji} {categoryData?.label} detected
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Emoji picker */}
+            <div className="space-y-2">
+              <label className="form-label">Choose icon</label>
+              <div className="flex gap-2 flex-wrap">
+                {(CATEGORY_EMOJIS[resolvedCategory] ?? CATEGORY_EMOJIS.custom).map((e) => (
+                  <button key={e} type="button" onClick={() => setEmoji(e)}
+                    className={cn("flex h-10 w-10 items-center justify-center rounded-xl border text-xl transition",
+                      emoji === e ? "border-gold bg-gold/10" : "border-cream-dark bg-cream hover:border-ink-muted/40")}>
+                    {e}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
-          ) : null}
 
-          <div className="space-y-2">
-            <label className="form-label">Starting Point</label>
-            <input
-              {...register("currentValue")}
-              type="number"
-              min="0"
-              placeholder="0"
-              className="form-input min-h-[52px] rounded-2xl"
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Category chips */}
             <div className="space-y-2">
-              <label className="form-label">Start Date</label>
-              <input
-                {...register("startDate")}
-                type="date"
-                className="form-input min-h-[52px] rounded-2xl"
-              />
+              <label className="form-label">Category</label>
+              <div className="flex flex-wrap gap-2">
+                {CATEGORIES.map((cat) => (
+                  <button key={cat.value} type="button"
+                    onClick={() => { setCategory(cat.value); setEmoji(CATEGORY_EMOJIS[cat.value]?.[0] ?? "⭐"); }}
+                    className={cn("rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                      category === cat.value ? "border-ink bg-ink text-cream-paper" : "border-cream-dark bg-cream text-ink-muted hover:border-ink-muted/50 hover:text-ink")}>
+                    {cat.emoji} {cat.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              <label className="form-label">End Date</label>
-              <input
-                {...register("endDate")}
-                type="date"
-                className="form-input min-h-[52px] rounded-2xl"
-              />
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            <label className="form-label">Milestones</label>
-            <input
-              value={milestoneInput}
-              onChange={(event) => setMilestoneInput(event.target.value)}
-              placeholder="5K, 10K, Half Marathon, Race Day"
-              className="form-input min-h-[52px] rounded-2xl"
-            />
-          </div>
+            {/* AI tip */}
+            {title.length >= 3 && (
+              <div className="flex items-start gap-2.5 rounded-2xl border border-gold/20 bg-gold/5 px-4 py-3">
+                <Sparkles className="h-4 w-4 text-gold shrink-0 mt-0.5" />
+                <p className="text-xs text-ink-muted leading-5">
+                  <span className="font-semibold text-ink">Specific goals are 2× more likely to be completed</span> — be precise about your target and timeline.
+                </p>
+              </div>
+            )}
 
-          <div className="space-y-3">
-            <label className="form-label">Color</label>
-            <div className="flex flex-wrap gap-3">
-              {COLOR_OPTIONS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() => setValue("color", color)}
-                  className={cn(
-                    "h-9 w-9 rounded-full border-2 transition-transform",
-                    selectedColor === color
-                      ? "scale-110 border-ink"
-                      : "border-transparent hover:scale-105"
-                  )}
-                  style={{ background: color }}
-                  aria-label={`Select ${color}`}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="btn-secondary min-h-[48px] rounded-2xl px-5"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </button>
-            <button
-              type="button"
-              onClick={() => setStep(3)}
-              className="btn-primary min-h-[48px] rounded-2xl px-5"
-            >
-              Next: Add Tasks →
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {step === 3 ? (
-        <div className="space-y-6 pt-6 lg:pt-0">
-          <div>
-            <h2 className="text-2xl font-serif font-semibold text-ink">
-              Today&apos;s Intentions
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-ink-muted">
-              Add simple daily actions that keep this goal alive.
-            </p>
-          </div>
-
-          {/* Hint about auto-tracking */}
-          <div className="rounded-2xl border border-gold/30 bg-gold/5 px-4 py-3 text-sm text-ink-muted">
-            <p className="font-semibold text-ink">Smart auto-tracking</p>
-            <p className="mt-0.5">
-              Set how much each task counts toward your goal (e.g. &ldquo;10 pages&rdquo; per read session).
-              Every time you check it off, your progress bar updates automatically.
-            </p>
-          </div>
-
-          {tasks.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-cream-dark bg-cream px-4 py-3 text-sm text-ink-muted">
-              <p className="font-semibold text-ink">Quick start intention</p>
-              <p className="mt-1">
-                Auto-suggest:{" "}
-                <span className="font-medium text-ink">
-                  {
-                    makeAutoTaskSuggestion({
-                      title: watchedTitle || "this goal",
-                      intent: smartSuggestion.intent,
-                      amount: smartAmountNumber,
-                      unit: watchedUnit || smartSuggestion.unit,
-                      cadence: moneyCadence,
-                      startDate: watchedStartDate || null,
-                      endDate: watchedEndDate || null,
-                      targetValue:
-                        typeof watchedTargetValue === "number" && Number.isFinite(watchedTargetValue)
-                          ? watchedTargetValue
-                          : null,
-                    }).text
-                  }
-                </span>
-              </p>
-              <button
-                type="button"
-                onClick={addSmartTask}
-                className="mt-2 inline-flex items-center gap-2 rounded-xl border border-cream-dark bg-white/80 px-3 py-2 text-xs font-semibold text-ink transition hover:border-ink-muted"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Use smart default
+            <div className="flex justify-end">
+              <button type="button"
+                onClick={() => { if (!title.trim() || title.trim().length < 3) { toast("Enter a goal title first", "error"); return; } setStep(2); }}
+                className="btn-primary min-h-[48px] rounded-2xl px-6">
+                Continue <ArrowRight className="h-4 w-4" />
               </button>
             </div>
-          ) : null}
+          </>
+        )}
 
-          <div className="space-y-3">
-            {tasks.map((task, index) => (
-              <div
-                key={`${task.text}-${index}`}
-                className="flex min-h-[56px] items-center gap-3 rounded-[1.5rem] border border-cream-dark bg-white/75 px-4 py-3"
-              >
-                <span
-                  className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                  style={{ background: selectedColor ?? "#C4963A" }}
-                />
-                <span className="flex-1 text-sm text-ink">{task.text}</span>
-                {task.incrementValue && (
-                  <span className="rounded-full border border-cream-dark bg-cream px-2 py-0.5 text-xs font-mono text-ink-muted">
-                    +{task.incrementValue} {watchedUnit || smartSuggestion.unit || ""}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeTask(index)}
-                  className="text-sm font-semibold text-ink-muted transition-colors hover:text-rose"
-                >
-                  Remove
+        {/* ── Step 2: Deadline ─────────────────────────────────────────── */}
+        {step === 2 && (
+          <>
+            <div>
+              <h2 className="text-2xl font-serif font-semibold text-ink">When do you finish?</h2>
+              <p className="mt-1 text-sm text-ink-muted">Pick a realistic timeframe</p>
+            </div>
+
+            {/* Preset pills */}
+            <div className="flex gap-2 flex-wrap">
+              {DEADLINE_PRESETS.map((p, i) => (
+                <button key={p.label} type="button"
+                  onClick={() => { setPresetIdx(i); setDeadline(addDays(new Date(), p.days)); setShowCalendar(false); }}
+                  className={cn("rounded-2xl border px-4 py-2 text-sm font-semibold transition",
+                    presetIdx === i ? "border-gold bg-gold text-ink" : "border-cream-dark bg-cream text-ink-muted hover:border-ink-muted/40 hover:text-ink")}>
+                  {p.label}
                 </button>
-              </div>
-            ))}
-          </div>
+              ))}
+              <button type="button"
+                onClick={() => { setPresetIdx(null); setShowCalendar(true); }}
+                className={cn("rounded-2xl border px-4 py-2 text-sm font-semibold transition",
+                  presetIdx === null ? "border-gold bg-gold text-ink" : "border-cream-dark bg-cream text-ink-muted hover:border-ink-muted/40 hover:text-ink")}>
+                Custom
+              </button>
+            </div>
 
-          <div className="space-y-2">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                value={newTask}
-                onChange={(event) => setNewTask(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addTask();
-                  }
-                }}
-                placeholder="e.g. Run 5km in the morning"
-                className="form-input min-h-[52px] flex-1 rounded-2xl"
+            {/* Calendar (always shown for custom, optional for preset) */}
+            {(showCalendar || presetIdx !== null) && (
+              <MiniCalendar
+                selected={deadline}
+                onSelect={(d) => { setDeadline(d); setPresetIdx(null); setShowCalendar(true); }}
               />
+            )}
+
+            {deadline && (
+              <div className="rounded-2xl border border-cream-dark bg-cream px-4 py-3">
+                <p className="text-sm font-semibold text-ink">Goal ends: {formatDate(deadline)}</p>
+                <p className="text-xs text-ink-muted mt-0.5">{daysFromNow(deadline)} days from today</p>
+              </div>
+            )}
+
+            <div className="flex justify-between gap-3">
+              <button type="button" onClick={() => setStep(1)} className="btn-secondary min-h-[48px] rounded-2xl px-5">
+                <ArrowLeft className="h-4 w-4" />Back
+              </button>
+              <button type="button" onClick={() => setStep(3)} className="btn-primary min-h-[48px] rounded-2xl px-6">
+                Continue <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 3: Solo or Group ────────────────────────────────────── */}
+        {step === 3 && (
+          <>
+            <div>
+              <h2 className="text-2xl font-serif font-semibold text-ink">Solo or with others?</h2>
+              <div className="mt-2 flex items-center gap-1.5 rounded-xl border border-gold/25 bg-gold/5 px-3 py-2">
+                <Sparkles className="h-3.5 w-3.5 text-gold shrink-0" />
+                <p className="text-xs font-medium text-ink-muted">Group goals complete <span className="font-bold text-ink">34% faster</span> with accountability!</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {/* Solo */}
+              <button type="button" onClick={() => setGoalType("solo")}
+                className={cn("w-full flex items-center gap-4 rounded-2xl border p-4 text-left transition-all",
+                  goalType === "solo" ? "border-ink bg-ink/5" : "border-cream-dark bg-cream hover:border-ink-muted/40")}>
+                <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl",
+                  goalType === "solo" ? "bg-ink/10" : "bg-cream-dark")}>
+                  🙋
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-ink">Solo goal</p>
+                  <p className="text-sm text-ink-muted">Private by default</p>
+                </div>
+                {goalType === "solo" && (
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold">
+                    <Check className="h-3.5 w-3.5 text-white" />
+                  </div>
+                )}
+              </button>
+
+              {/* Group */}
+              <button type="button" onClick={() => setGoalType("group")}
+                className={cn("w-full flex items-center gap-4 rounded-2xl border p-4 text-left transition-all",
+                  goalType === "group" ? "border-ink bg-ink/5" : "border-cream-dark bg-cream hover:border-ink-muted/40")}>
+                <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl",
+                  goalType === "group" ? "bg-ink/10" : "bg-cream-dark")}>
+                  👥
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-ink">Group goal</p>
+                  <p className="text-sm text-ink-muted">Shared with your circle members</p>
+                </div>
+                {goalType === "group" && (
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold">
+                    <Check className="h-3.5 w-3.5 text-white" />
+                  </div>
+                )}
+              </button>
+
+              {goalType === "group" && (
+                <div className="rounded-2xl border border-cream-dark bg-cream px-4 py-3">
+                  <p className="text-xs text-ink-muted">You can invite circle members after creating the goal from the goal detail page.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between gap-3">
+              <button type="button" onClick={() => setStep(2)} className="btn-secondary min-h-[48px] rounded-2xl px-5">
+                <ArrowLeft className="h-4 w-4" />Back
+              </button>
+              <button type="button" onClick={() => setStep(4)} className="btn-primary min-h-[48px] rounded-2xl px-6">
+                Continue <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 4: Intentions / schedule ───────────────────────────── */}
+        {step === 4 && (
+          <>
+            <div>
+              <h2 className="text-2xl font-serif font-semibold text-ink">
+                When will you work on &ldquo;{title}&rdquo;?
+              </h2>
+              <p className="mt-1 text-sm text-ink-muted">Add sessions — a reminder keeps you honest</p>
+            </div>
+
+            {/* Existing intentions */}
+            <div className="space-y-2.5">
+              {intentions.map((intention) => (
+                <div key={intention.id} className="flex items-center gap-3 rounded-2xl border border-cream-dark bg-cream px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-ink">{intention.label}</p>
+                    <p className="text-xs text-ink-muted mt-0.5">
+                      {intention.days.join(", ")} · {formatTime(intention.time)} · {intention.duration} min
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => removeIntention(intention.id)}
+                    className="text-xs font-medium text-ink-muted hover:text-rose transition">Remove</button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add intention form */}
+            {addingIntention ? (
+              <div className="rounded-2xl border border-cream-dark bg-cream p-4 space-y-3">
+                <input type="text" value={newIntentionLabel} onChange={(e) => setNewIntentionLabel(e.target.value)}
+                  placeholder="e.g. Morning run" className="form-input rounded-xl min-h-[44px]" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">Time</label>
+                    <input type="time" value={newIntentionTime} onChange={(e) => setNewIntentionTime(e.target.value)} className="form-input rounded-xl min-h-[44px]" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">Duration (min)</label>
+                    <input type="number" value={newIntentionDuration} onChange={(e) => setNewIntentionDuration(Number(e.target.value))} min={5} max={480} step={5} className="form-input rounded-xl min-h-[44px]" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">Days</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {DAYS_SHORT.map((d) => (
+                      <button key={d} type="button" onClick={() => toggleDay(d)}
+                        className={cn("rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition",
+                          newIntentionDays.includes(d) ? "border-ink bg-ink text-cream-paper" : "border-cream-dark text-ink-muted hover:border-ink-muted/50")}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={addIntention} className="btn-primary flex-1 min-h-[40px] rounded-xl text-sm">
+                    <Plus className="h-3.5 w-3.5" />Add session
+                  </button>
+                  <button type="button" onClick={() => setAddingIntention(false)} className="btn-secondary min-h-[40px] rounded-xl px-4 text-sm">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setAddingIntention(true)}
+                className="w-full flex items-center justify-center gap-2 rounded-2xl border border-dashed border-cream-dark py-3.5 text-sm font-medium text-ink-muted hover:border-ink-muted/40 hover:text-ink transition">
+                <Plus className="h-4 w-4" />Add another intention
+              </button>
+            )}
+
+            <div className="flex justify-between gap-3">
+              <button type="button" onClick={() => setStep(3)} className="btn-secondary min-h-[48px] rounded-2xl px-5">
+                <ArrowLeft className="h-4 w-4" />Back
+              </button>
               <div className="flex gap-2">
-                <input
-                  value={newTaskIncrement}
-                  onChange={(e) => setNewTaskIncrement(e.target.value)}
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder={watchedUnit ? `+${watchedUnit}` : "Amount"}
-                  className="form-input min-h-[52px] w-28 rounded-2xl text-center"
-                  title="How much does completing this task add to your goal progress?"
-                />
-                <button
-                  type="button"
-                  onClick={addTask}
-                  disabled={!newTask.trim() || tasks.length >= 10}
-                  className="btn-secondary min-h-[52px] rounded-2xl px-5 disabled:opacity-40"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add
+                <button type="button" onClick={() => setStep(5)} className="btn-secondary min-h-[48px] rounded-2xl px-5 text-sm">Skip for now</button>
+                <button type="button" onClick={() => setStep(5)} className="btn-primary min-h-[48px] rounded-2xl px-6">
+                  Continue <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
-            <p className="text-xs text-ink-muted">
-              Optional: enter the amount this task contributes (e.g. 10 for &ldquo;10 pages&rdquo;)
-            </p>
-          </div>
+          </>
+        )}
 
-          <p className="text-sm italic text-ink-muted">
-            These repeating tasks will show up in Today&apos;s Intentions across the app.
-          </p>
+        {/* ── Step 5: Review & Save ────────────────────────────────────── */}
+        {step === 5 && (
+          <>
+            <div>
+              <h2 className="text-2xl font-serif font-semibold text-ink">Review &amp; Save</h2>
+              <p className="mt-1 text-sm text-ink-muted">Confirm your goal before saving</p>
+            </div>
 
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="btn-secondary min-h-[48px] rounded-2xl px-5"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
+            {/* Summary card */}
+            <div className="rounded-2xl border border-cream-dark divide-y divide-cream-dark overflow-hidden">
+              {/* Goal */}
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                <span className="text-2xl">{emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-ink truncate">{title}</p>
+                  <p className="text-xs text-ink-muted mt-0.5">{categoryData?.label} · {goalType === "solo" ? "Solo goal" : "Group goal"}</p>
+                </div>
+                <button type="button" onClick={() => setStep(1)} className="text-xs font-semibold text-gold hover:underline shrink-0">Edit</button>
+              </div>
+
+              {/* Deadline */}
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cream text-base shrink-0">📅</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ink">{deadline ? formatDate(deadline) : "No deadline set"}</p>
+                  {deadline && <p className="text-xs text-ink-muted">{daysFromNow(deadline)} days from today</p>}
+                </div>
+                <button type="button" onClick={() => setStep(2)} className="text-xs font-semibold text-gold hover:underline shrink-0">Edit</button>
+              </div>
+
+              {/* Intentions */}
+              <div className="flex items-start gap-3 px-4 py-3.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cream text-base shrink-0">⏰</div>
+                <div className="flex-1 min-w-0">
+                  {intentions.length > 0 ? (
+                    intentions.map((i) => (
+                      <p key={i.id} className="text-sm text-ink">{i.days.join(", ")} · {formatTime(i.time)} · {i.duration} min</p>
+                    ))
+                  ) : (
+                    <p className="text-sm text-ink-muted">No schedule set</p>
+                  )}
+                </div>
+                <button type="button" onClick={() => setStep(4)} className="text-xs font-semibold text-gold hover:underline shrink-0">Edit</button>
+              </div>
+
+              {/* Predicted */}
+              <div className="flex items-center gap-3 px-4 py-3.5 bg-emerald-50/50">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-base shrink-0">✅</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ink">Predicted: <span className="text-emerald-600">On track</span></p>
+                  <p className="text-xs text-ink-muted">High confidence — you&apos;re set up for success</p>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" onClick={handleSubmit} disabled={submitting}
+              className="btn-gold w-full min-h-[52px] justify-center rounded-2xl text-base font-semibold disabled:opacity-50">
+              {submitting ? (
+                <><Loader2 className="h-5 w-5 animate-spin" />Saving…</>
+              ) : (
+                <>🏠 Save Goal</>
+              )}
             </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="btn-gold min-h-[48px] rounded-2xl px-5 disabled:opacity-50"
-            >
-              {submitting ? "Creating..." : "Plant this Star ⭐"}
-              {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
+
+            <button type="button" onClick={() => setStep(4)} className="w-full text-center text-sm text-ink-muted hover:text-ink transition py-1">
+              <ArrowLeft className="h-3.5 w-3.5 inline mr-1" />Back
             </button>
-          </div>
-        </div>
-      ) : null}
+          </>
+        )}
+      </div>
 
-      <DecomposeModal
-        open={decomposeOpen}
-        onClose={() => setDecomposeOpen(false)}
-        onAccept={applyDecomposed}
-      />
-
-      {intentionsOpen && createdGoalId && createdGoalTitle && (
-        <GoalIntentionsSheet
-          goalId={createdGoalId}
-          goalTitle={createdGoalTitle}
-          onClose={() => {
-            setIntentionsOpen(false);
-            router.push("/dashboard");
-            router.refresh();
-          }}
-        />
-      )}
-    </form>
+      <DecomposeModal open={decomposeOpen} onClose={() => setDecomposeOpen(false)} onAccept={applyDecomposed} />
+    </>
   );
 }
