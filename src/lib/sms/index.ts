@@ -1,6 +1,5 @@
-// src/lib/sms/index.ts
-// SMS delivery via Twilio
-// Gracefully no-ops if Twilio credentials are not configured
+// SMS delivery via Twilio REST API (native fetch, Edge-compatible)
+// Gracefully no-ops if Twilio credentials are not configured.
 
 interface SendInvitationParams {
   to: string;
@@ -14,7 +13,6 @@ export const smsService = {
     const token = process.env["TWILIO_AUTH_TOKEN"];
     const from = process.env["TWILIO_PHONE_NUMBER"];
 
-    // Gracefully skip if Twilio is not configured
     if (!sid || !token || !from) {
       console.info(
         "SMS not sent: Twilio credentials not configured. " +
@@ -24,13 +22,23 @@ export const smsService = {
     }
 
     const appName = process.env["NEXT_PUBLIC_APP_NAME"] ?? "North Star";
-    const message = `${senderName} invited you to ${appName} — a goal tracker for serious growth. Sign up here: ${inviteUrl}`;
+    const body = `${senderName} invited you to ${appName} — a goal tracker for serious growth. Sign up here: ${inviteUrl}`;
 
-    // Lazy-load Twilio to avoid issues when not installed
     try {
-      const twilio = await import("twilio");
-      const client = twilio.default(sid, token);
-      await client.messages.create({ body: message, from, to });
+      const url = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${btoa(`${sid}:${token}`)}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Twilio API ${response.status}: ${text}`);
+      }
     } catch (err) {
       console.error("Failed to send SMS:", err);
       // Don't throw — SMS failure shouldn't block the invitation flow

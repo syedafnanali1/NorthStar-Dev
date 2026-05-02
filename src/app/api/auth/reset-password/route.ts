@@ -30,7 +30,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const { token, password } = validated.data;
-    const tokenId = verifySignedResetToken(token);
+    const tokenId = await verifySignedResetToken(token);
 
     if (!tokenId) {
       return NextResponse.json(

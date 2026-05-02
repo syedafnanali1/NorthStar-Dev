@@ -8,7 +8,6 @@ import {
   isNull,
   sql,
 } from "drizzle-orm";
-import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "crypto";
 
 import { db } from "@/lib/db";
 import {
@@ -44,37 +43,59 @@ const securitySecret = process.env["AUTH_SECURITY_SECRET"] ?? process.env["AUTH_
 
 export type OtpPurpose = "email_verification" | "signin_step_up";
 
+// Constant-time string comparison (no Node.js timingSafeEqual needed)
 function safeEqual(a: string, b: string): boolean {
-  const aBuffer = Buffer.from(a, "utf8");
-  const bBuffer = Buffer.from(b, "utf8");
-  if (aBuffer.length !== bBuffer.length) return false;
-  return timingSafeEqual(aBuffer, bBuffer);
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
 }
 
-function hashOtp(otp: string, purpose: OtpPurpose, email: string): string {
-  return createHash("sha256")
-    .update(`${securitySecret}:${purpose}:${email.trim().toLowerCase()}:${otp}`)
-    .digest("hex");
+async function hmacHex(key: string, data: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(data));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function sha256Hex(data: string): Promise<string> {
+  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(buffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hashOtp(otp: string, purpose: OtpPurpose, email: string): Promise<string> {
+  return sha256Hex(`${securitySecret}:${purpose}:${email.trim().toLowerCase()}:${otp}`);
 }
 
 export function generateSixDigitOtp(): string {
-  return randomInt(0, 1_000_000).toString().padStart(6, "0");
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  return (array[0]! % 1_000_000).toString().padStart(6, "0");
 }
 
-export function computeFingerprintHash(input: {
+export async function computeFingerprintHash(input: {
   userAgent?: string | null;
   screen?: string | null;
   timezone?: string | null;
-}): string {
+}): Promise<string> {
   const normalized = [
     input.userAgent?.trim().toLowerCase() ?? "unknown",
     input.screen?.trim().toLowerCase() ?? "unknown",
     input.timezone?.trim().toLowerCase() ?? "unknown",
   ].join("|");
-
-  return createHash("sha256")
-    .update(`${securitySecret}:fingerprint:${normalized}`)
-    .digest("hex");
+  return sha256Hex(`${securitySecret}:fingerprint:${normalized}`);
 }
 
 export function getClientIp(headers: Headers): string | null {
@@ -152,7 +173,7 @@ async function createOtpChallengeFallback(params: CreateOtpParams): Promise<Crea
   const otp = generateSixDigitOtp();
   const issuedAt = Date.now();
   const expiresAt = new Date(issuedAt + AUTH_SECURITY_LIMITS.otpExpiresMinutes * 60_000);
-  const otpHash = hashOtp(otp, params.purpose, normalizedEmail);
+  const otpHash = await hashOtp(otp, params.purpose, normalizedEmail);
 
   await db.delete(verificationTokens).where(eq(verificationTokens.identifier, identifier));
   await db.insert(verificationTokens).values({
@@ -196,7 +217,7 @@ async function verifyOtpChallengeFallback(input: {
   const storedHash = parts[1];
   if (!storedHash) return { ok: false, reason: "invalid" };
 
-  const providedHash = hashOtp(input.otp, input.purpose, normalizeEmail(input.email));
+  const providedHash = await hashOtp(input.otp, input.purpose, normalizeEmail(input.email));
   if (!safeEqual(storedHash, providedHash)) return { ok: false, reason: "invalid" };
 
   await db.delete(verificationTokens).where(eq(verificationTokens.identifier, identifier));
@@ -247,7 +268,7 @@ export async function createOtpChallenge(params: CreateOtpParams): Promise<Creat
       userId: params.userId ?? null,
       email: normalizedEmail,
       purpose: params.purpose,
-      otpHash: hashOtp(otp, params.purpose, normalizedEmail),
+      otpHash: await hashOtp(otp, params.purpose, normalizedEmail),
       context: params.context ?? {},
       expiresAt,
     });
@@ -289,7 +310,7 @@ export async function verifyOtpChallenge(input: {
     if (!challenge) return { ok: false, reason: "expired" };
     if (challenge.expiresAt <= now) return { ok: false, reason: "expired" };
 
-    const providedHash = hashOtp(input.otp, input.purpose, normalizedEmail);
+    const providedHash = await hashOtp(input.otp, input.purpose, normalizedEmail);
     if (!safeEqual(providedHash, challenge.otpHash)) {
       return { ok: false, reason: "invalid" };
     }
@@ -403,26 +424,18 @@ export async function invalidateAllUserSessions(userId: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.userId, userId));
 }
 
-export function createSignedResetToken(): { tokenId: string; signedToken: string } {
-  const tokenId = randomBytes(24).toString("hex");
-  const signature = createHmac("sha256", securitySecret)
-    .update(`password-reset:${tokenId}`)
-    .digest("hex");
-
-  return {
-    tokenId,
-    signedToken: `${tokenId}.${signature}`,
-  };
+export async function createSignedResetToken(): Promise<{ tokenId: string; signedToken: string }> {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  const tokenId = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const signature = await hmacHex(securitySecret, `password-reset:${tokenId}`);
+  return { tokenId, signedToken: `${tokenId}.${signature}` };
 }
 
-export function verifySignedResetToken(signedToken: string): string | null {
+export async function verifySignedResetToken(signedToken: string): Promise<string | null> {
   const [tokenId, signature] = signedToken.split(".");
   if (!tokenId || !signature) return null;
-
-  const expected = createHmac("sha256", securitySecret)
-    .update(`password-reset:${tokenId}`)
-    .digest("hex");
-
+  const expected = await hmacHex(securitySecret, `password-reset:${tokenId}`);
   if (!safeEqual(expected, signature)) return null;
   return tokenId;
 }

@@ -42,7 +42,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
     }
 
-    const { tokenId, signedToken } = createSignedResetToken();
+    const { tokenId, signedToken } = await createSignedResetToken();
 
     await db.insert(passwordResetTokens).values({
       userId: user.id,

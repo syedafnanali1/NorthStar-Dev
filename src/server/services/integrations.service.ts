@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { eq, and, inArray, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
@@ -7,8 +6,19 @@ import {
   webhookSubscriptions,
 } from "@/drizzle/schema";
 
-function signPayload(secret: string, payload: string): string {
-  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+async function signPayload(secret: string, payload: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export const integrationsService = {
@@ -127,7 +137,7 @@ export const integrationsService = {
 
     for (const hook of matched) {
       try {
-        const signature = signPayload(hook.secret, body);
+        const signature = await signPayload(hook.secret, body);
         const response = await fetch(hook.endpointUrl, {
           method: "POST",
           headers: {
