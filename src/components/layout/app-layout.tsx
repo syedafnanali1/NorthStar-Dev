@@ -5,6 +5,7 @@ import { RightPanel } from "./right-panel";
 import { SplashScreen } from "@/components/ui/splash-screen";
 import { XpToastProvider } from "@/components/ui/xp-toast";
 import { DemoBanner } from "@/components/ui/demo-banner";
+import { GlobalCheckin } from "./global-checkin";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -58,6 +59,7 @@ export async function AppLayout({
           {children}
         </div>
       </main>
+      <GlobalCheckin />
       <RightPanel userId={user.id} variant={rightPanelVariant} />
     </div>
   );

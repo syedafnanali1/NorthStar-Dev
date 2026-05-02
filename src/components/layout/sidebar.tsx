@@ -35,7 +35,7 @@ const DESKTOP_NAV_ITEMS = [
 
 const MOBILE_NAV_ITEMS = [
   { href: "/dashboard", label: "Goals", icon: Target },
-  { href: "/calendar", label: "Log", icon: CalendarDays },
+  { href: null, label: "Log", icon: CalendarDays },
   { href: "/circle", label: "Circle", icon: Users },
   { href: "/groups", label: "Groups", icon: Trophy },
   { href: "/analytics", label: "Stats", icon: BarChart3 },
@@ -305,36 +305,27 @@ export function Sidebar({ user }: SidebarProps) {
       >
         <div className="mx-auto grid max-w-sm grid-cols-5 px-1 pt-1 pb-0.5">
           {MOBILE_NAV_ITEMS.map((item) => {
-            const isActive =
-              pathname === item.href || pathname.startsWith(item.href + "/");
+            const isLog = item.href === null;
+            const isActive = !isLog && (pathname === item.href || pathname.startsWith((item.href ?? "") + "/"));
             const Icon = item.icon;
-            const badgeKey = BADGE_HREFS[item.href];
+            const badgeKey = item.href ? BADGE_HREFS[item.href] : undefined;
             const badgeCount = badgeKey ? badges[badgeKey] : 0;
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => {
-                  prevPath.current = pathname;
-                  triggerHaptic();
-                }}
-                className={cn(
-                  "select-none relative flex flex-col items-center justify-center gap-[3px] py-2 px-1",
-                  "transition-all duration-150 rounded-xl",
-                  "min-h-[52px]",
-                  isActive ? "text-ink" : "text-ink-muted active:text-ink"
-                )}
-              >
-                {/* Subtle active tint behind entire item */}
+            const sharedClassName = cn(
+              "select-none relative flex flex-col items-center justify-center gap-[3px] py-2 px-1",
+              "transition-all duration-150 rounded-xl",
+              "min-h-[52px]",
+              isActive ? "text-ink" : "text-ink-muted active:text-ink"
+            );
+
+            const inner = (
+              <>
                 {isActive && (
                   <span
                     className="absolute inset-x-1.5 inset-y-1 rounded-xl"
                     style={{ background: "rgb(var(--ink-rgb) / 0.07)" }}
                   />
                 )}
-
-                {/* Icon — filled pill when active */}
                 <span className="relative z-10">
                   <span
                     className={cn(
@@ -354,17 +345,42 @@ export function Sidebar({ user }: SidebarProps) {
                     </span>
                   )}
                 </span>
-
-                {/* Label */}
                 <span
-                  className={cn(
-                    "relative z-10 font-semibold leading-none",
-                    isActive ? "text-ink" : "text-ink-muted"
-                  )}
+                  className={cn("relative z-10 font-semibold leading-none", isActive ? "text-ink" : "text-ink-muted")}
                   style={{ fontSize: "9.5px", letterSpacing: "0.02em" }}
                 >
                   {item.label}
                 </span>
+              </>
+            );
+
+            if (isLog) {
+              return (
+                <button
+                  key="log"
+                  type="button"
+                  className={sharedClassName}
+                  onClick={() => {
+                    void triggerHaptic();
+                    window.dispatchEvent(new Event("northstar:open-checkin"));
+                  }}
+                >
+                  {inner}
+                </button>
+              );
+            }
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href!}
+                onClick={() => {
+                  prevPath.current = pathname;
+                  void triggerHaptic();
+                }}
+                className={sharedClassName}
+              >
+                {inner}
               </Link>
             );
           })}

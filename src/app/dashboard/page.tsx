@@ -117,12 +117,14 @@ export default async function DashboardPage() {
         {/* ── Daily Pulse ───────────────────────────────────────── */}
         <DailyPulseCard />
 
+        {/* ── Momentum ──────────────────────────────────────────── */}
+        {momentum ? <MomentumCard momentum={momentum} /> : null}
+
         {/* ── AI Coaching Banner ────────────────────────────────── */}
         {latestInsight ? (
           <AiInsightBanner insight={latestInsight} />
         ) : null}
 
-        {momentum ? <MomentumCard momentum={momentum} /> : null}
         <GoalList goals={goals} circleMembers={circleMembers} />
         <MobileSidecarServer userId={user.id} />
 

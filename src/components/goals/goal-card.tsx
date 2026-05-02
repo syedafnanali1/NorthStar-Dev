@@ -13,6 +13,7 @@ import type { GoalWithDetails } from "@/server/services/goals.service";
 import { MomentModal } from "./moment-modal";
 import { ShareGoalModal } from "./share-goal-modal";
 import { CelebrationModal } from "./celebration-modal";
+import DailyCheckinSheet from "@/modals/DailyCheckinSheet";
 
 // ── Progress bar color: teal ≥70%, amber 40–69%, coral <40% ──────────
 function progressBarColor(pct: number): string {
@@ -70,6 +71,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
   const [expanded, setExpanded]           = useState(false);
   const [momentOpen, setMomentOpen]       = useState(false);
+  const [checkinOpen, setCheckinOpen]     = useState(false);
   const [shareOpen, setShareOpen]         = useState(false);
   const [menuOpen, setMenuOpen]           = useState(false);
   const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set());
@@ -80,6 +82,12 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const router  = useRouter();
   const todayKey = format(new Date(), "yyyy-MM-dd");
+  const goalWeekLabel = (() => {
+    if (!goal.startDate) return format(new Date(), "MMMM yyyy");
+    const start = typeof goal.startDate === "string" ? parseISO(goal.startDate) : goal.startDate;
+    const week = Math.max(1, Math.floor(differenceInDays(new Date(), start) / 7) + 1);
+    return `Week ${week} · ${format(new Date(), "MMMM yyyy")}`;
+  })();
 
   // Load today's completed intentions when expanded
   useEffect(() => {
@@ -267,6 +275,14 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                             <UserPlus className="h-3.5 w-3.5 text-ink-muted" />
                             Add to Circle
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); setMomentOpen(true); }}
+                            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-sm text-ink hover:bg-cream transition-colors"
+                          >
+                            <span className="h-3.5 w-3.5 text-center leading-none text-xs text-ink-muted">✨</span>
+                            Add Moment
+                          </button>
                           <div className="my-1 border-t border-cream-dark" />
                           <button
                             type="button"
@@ -338,10 +354,11 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); setMomentOpen(true); }}
+                    onClick={(e) => { e.stopPropagation(); setCheckinOpen(true); }}
                     className="btn-secondary h-7 rounded-full px-3 text-xs gap-1"
+                    style={{ color: '#1D9E75', borderColor: 'rgba(29,158,117,0.3)' }}
                   >
-                    ✨ Moment
+                    ✓ Log
                   </button>
                 </div>
                 <button
@@ -473,6 +490,13 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
         goalTitle={goal.title}
         open={momentOpen}
         onClose={() => setMomentOpen(false)}
+      />
+      <DailyCheckinSheet
+        isOpen={checkinOpen}
+        goalName={goal.title}
+        weekLabel={goalWeekLabel}
+        goalId={goal.id}
+        onClose={() => setCheckinOpen(false)}
       />
       <ShareGoalModal
         goalId={goal.id}
