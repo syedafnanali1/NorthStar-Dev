@@ -18,6 +18,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { TrialBanner } from "@/components/ui/trial-banner";
 import { StatsGlanceCards } from "@/components/analytics/stats-glance-cards";
 import { CrossTabNudge } from "@/components/ui/cross-tab-nudge";
+import { DailyPulseCard } from "./daily-pulse-card";
 
 export const metadata: Metadata = {
   title: "Your Goals",
@@ -112,6 +113,9 @@ export default async function DashboardPage() {
 
         {/* ── Glance Stats ──────────────────────────────────────── */}
         <StatsGlanceCards />
+
+        {/* ── Daily Pulse ───────────────────────────────────────── */}
+        <DailyPulseCard />
 
         {/* ── AI Coaching Banner ────────────────────────────────── */}
         {latestInsight ? (

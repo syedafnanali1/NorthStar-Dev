@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { format } from "date-fns";
+import { format, differenceInDays, parseISO } from "date-fns";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, ChevronUp, MoreHorizontal, Pencil, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,45 @@ import type { GoalWithDetails } from "@/server/services/goals.service";
 import { MomentModal } from "./moment-modal";
 import { ShareGoalModal } from "./share-goal-modal";
 import { CelebrationModal } from "./celebration-modal";
+
+// ── Progress bar color: teal ≥70%, amber 40–69%, coral <40% ──────────
+function progressBarColor(pct: number): string {
+  if (pct >= 70) return '#1D9E75'  // teal-400
+  if (pct >= 40) return '#EF9F27'  // amber-400
+  return '#D85A30'                  // coral-400
+}
+
+// ── Days remaining badge ──────────────────────────────────────────────
+function DaysLeftBadge({ endDate, isCompleted }: { endDate: Date | string | null; isCompleted: boolean | null | undefined }) {
+  if (isCompleted || !endDate) return null
+  const end = typeof endDate === 'string' ? parseISO(endDate) : endDate
+  const days = differenceInDays(end, new Date())
+  if (days < 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold"
+        style={{ background: 'rgba(216,90,48,0.10)', color: '#D85A30', border: '1px solid rgba(216,90,48,0.20)' }}>
+        {Math.abs(days)}d overdue
+      </span>
+    )
+  }
+  if (days === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold"
+        style={{ background: 'rgba(239,159,39,0.10)', color: '#EF9F27', border: '1px solid rgba(239,159,39,0.20)' }}>
+        Due today
+      </span>
+    )
+  }
+  const color = days <= 7 ? '#EF9F27' : days <= 14 ? '#C4963A' : 'var(--ink-muted)'
+  const bg = days <= 7 ? 'rgba(239,159,39,0.08)' : days <= 14 ? 'rgba(196,150,58,0.08)' : 'var(--cream)'
+  const border = days <= 7 ? 'rgba(239,159,39,0.2)' : days <= 14 ? 'rgba(196,150,58,0.2)' : 'var(--cream-dark)'
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold"
+      style={{ background: bg, color, border: `1px solid ${border}` }}>
+      {days}d left
+    </span>
+  )
+}
 
 interface GoalCardProps {
   goal: GoalWithDetails;
@@ -151,20 +190,24 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  {/* Category */}
-                  <p className="section-label" style={{ color: goal.color }}>
-                    {CATEGORY_LABELS[goal.category] ?? goal.category}
+                  {/* Category + days left row */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="section-label" style={{ color: goal.color }}>
+                      {CATEGORY_LABELS[goal.category] ?? goal.category}
+                    </p>
                     {goal.groupGoalItemId && (
-                      <span className="ml-2 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-600 normal-case tracking-normal font-semibold" style={{ fontSize: "0.6rem" }}>
-                        👥 Group Goal
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-600 normal-case tracking-normal font-semibold" style={{ fontSize: "0.6rem" }}>
+                        👥 Group
                       </span>
                     )}
-                    {goal.isCompleted && (
-                      <span className="ml-2 rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 text-gold normal-case tracking-normal font-semibold" style={{ fontSize: "0.6rem" }}>
-                        ✓ Completed
+                    {goal.isCompleted ? (
+                      <span className="rounded-full border border-gold/25 bg-gold/10 px-2 py-0.5 text-gold normal-case tracking-normal font-semibold" style={{ fontSize: "0.6rem" }}>
+                        ✓ Done
                       </span>
+                    ) : (
+                      <DaysLeftBadge endDate={goal.endDate} isCompleted={goal.isCompleted} />
                     )}
-                  </p>
+                  </div>
                   {/* Title */}
                   <h3 className="mt-1 font-serif text-[1.0625rem] font-semibold leading-snug text-ink sm:text-[1.125rem]">
                     {goal.title}
@@ -246,7 +289,7 @@ export function GoalCard({ goal, circleMembers = [] }: GoalCardProps) {
                 <div className="h-1.5 overflow-hidden rounded-full bg-cream-dark">
                   <div
                     className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${percent}%`, background: goal.color }}
+                    style={{ width: `${percent}%`, background: progressBarColor(percent) }}
                   />
                 </div>
                 <div className="flex items-center justify-between">
