@@ -1,6 +1,8 @@
 // src/app/api/invitations/route.ts
 // POST /api/invitations — send an invitation by email or phone
 
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { invitationsService } from "@/server/services/invitations.service";

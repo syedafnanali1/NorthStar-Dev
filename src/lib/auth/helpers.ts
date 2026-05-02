@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { users } from "@/drizzle/schema";
 import type { User } from "@/drizzle/schema";
 import { db } from "@/lib/db";
-import { auth } from "./config";
+import { edgeAuth as auth } from "./edge-config";
 
 /**
  * Get the current user ID from session.

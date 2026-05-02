@@ -2,6 +2,8 @@
 // GET  /api/goals — list all goals for the authenticated user
 // POST /api/goals — create a new goal
 
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { goalsService } from "@/server/services/goals.service";

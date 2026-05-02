@@ -1,6 +1,8 @@
 // src/app/api/onboarding/complete/route.ts
 // POST /api/onboarding/complete — mark the current user as having completed onboarding
 
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getSessionUserId } from "@/lib/auth/helpers";

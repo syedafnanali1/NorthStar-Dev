@@ -2,6 +2,8 @@
 // POST /api/ai/decompose - parse a natural-language goal description into
 // a full structured goal object.
 
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUserId } from "@/lib/auth/helpers";
