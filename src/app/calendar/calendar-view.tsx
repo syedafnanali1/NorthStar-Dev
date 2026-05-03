@@ -1,22 +1,23 @@
 "use client";
 
 // src/app/calendar/calendar-view.tsx
-// Unified calendar view matching spec §10:
-//   - Horizontal month strip (week scroll)
-//   - Event list: Today / This week / Upcoming
-//   - Event cards with colored left accent bars + Log / RSVP buttons
-//   - Check-in sheet (dark overlay) with feel picker, note, streak, photo
+// Calendar + intention checklist + mood/sleep prompt flow:
+//  - Month strip with week scroll; clicking a day shows that day's mood+sleep summary
+//  - Goal cards expand inline to reveal their intentions as a checkable task list
+//  - After completing intentions today: auto-prompts mood + sleep (required fields)
+//  - Navigation guard: intercepts any link click while mood/sleep unlogged today
+//  - Once mood+sleep saved for the day, prompt never shows again for that date
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   format, startOfWeek, endOfWeek, addWeeks, subWeeks,
   addDays, subDays, isToday, isSameDay, parseISO,
-  eachDayOfInterval, subMonths, subYears,
+  eachDayOfInterval,
 } from "date-fns";
 import {
-  ChevronLeft, ChevronRight, X, Camera, Flame, Check, Plus,
-  ChevronDown, ChevronUp,
+  ChevronLeft, ChevronRight, X, Camera, Flame, Check,
+  ChevronDown, ChevronUp, Moon, Smile,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toaster";
@@ -43,22 +44,11 @@ interface CalendarViewProps {
   allLogs: DailyLog[];
 }
 
-interface CheckinGoal extends GoalMeta {
-  goalTasks: GoalTask[];
-}
-
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const FEELS = [
-  { value: "tough",   label: "Tough",   emoji: "😤" },
-  { value: "okay",    label: "Okay",    emoji: "😊" },
-  { value: "great",   label: "Great",   emoji: "😄" },
-  { value: "on_fire", label: "On fire", emoji: "🔥" },
-] as const;
 
 const MOODS = [
   { value: "energized", label: "Energized", emoji: "🌟" },
-  { value: "focused",   label: "Focused",   emoji: "🔥" },
+  { value: "focused",   label: "Focused",   emoji: "🎯" },
   { value: "good",      label: "Good",      emoji: "😊" },
   { value: "neutral",   label: "Neutral",   emoji: "😐" },
   { value: "tired",     label: "Tired",     emoji: "😓" },
@@ -80,7 +70,6 @@ function calcGoalStreak(taskIds: string[], allLogs: DailyLog[]): number {
   if (taskIds.length === 0) return 0;
   const logMap = new Map(allLogs.map((l) => [l.date, l]));
   let date = new Date();
-  // If today not yet logged for this goal, start from yesterday
   const todayKey = format(date, "yyyy-MM-dd");
   const todayLog = logMap.get(todayKey);
   if (!todayLog || !taskIds.some((tid) => todayLog.completedTaskIds.includes(tid))) {
@@ -91,8 +80,7 @@ function calcGoalStreak(taskIds: string[], allLogs: DailyLog[]): number {
     const key = format(date, "yyyy-MM-dd");
     const log = logMap.get(key);
     if (!log) break;
-    const hasTask = taskIds.some((tid) => log.completedTaskIds.includes(tid));
-    if (!hasTask) break;
+    if (!taskIds.some((tid) => log.completedTaskIds.includes(tid))) break;
     streak++;
     date = subDays(date, 1);
   }
@@ -108,41 +96,278 @@ function goalActiveOnDay(goal: GoalMeta, d: Date): boolean {
   return true;
 }
 
-function getWeekNum(goal: GoalMeta): number {
-  if (!goal.startDate) return 1;
-  const diffMs = Date.now() - parseISO(goal.startDate).getTime();
-  return Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1);
+function skipKey(dateKey: string) { return `mood_sleep_skip_${dateKey}`; }
+
+// ─── MoodSleepPrompt ──────────────────────────────────────────────────────────
+// Dark overlay modal — required fields before leaving the calendar
+
+function MoodSleepPrompt({
+  dateKey,
+  existingLog,
+  onSaved,
+  onSkip,
+}: {
+  dateKey: string;
+  existingLog: DailyLog | undefined;
+  onSaved: (mood: string, sleep: string) => void;
+  onSkip: () => void;
+}) {
+  const [mood,  setMood]  = useState(existingLog?.mood  ?? "");
+  const [sleep, setSleep] = useState(existingLog?.sleep ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!mood || !sleep) {
+      toast("Please pick your mood and sleep", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/daily-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: dateKey,
+          mood,
+          sleep,
+          completedTaskIds: existingLog?.completedTaskIds ?? [],
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast("Day logged ✓");
+      onSaved(mood, sleep);
+    } catch {
+      toast("Failed to save", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onSkip} />
+      <div
+        className="relative w-full max-w-sm rounded-t-[2rem] sm:rounded-[2rem] bg-[#13110F] text-white shadow-2xl"
+        style={{ maxHeight: "90dvh" }}
+      >
+        <div className="overflow-y-auto p-6" style={{ maxHeight: "90dvh" }}>
+          {/* Drag handle */}
+          <div className="flex justify-center mb-4 sm:hidden">
+            <div className="h-1 w-10 rounded-full bg-white/20" />
+          </div>
+
+          {/* Header */}
+          <div className="mb-5 text-center">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#C4963A]/15">
+              <Moon className="h-7 w-7 text-[#C4963A]" />
+            </div>
+            <p className="text-lg font-bold text-white">Complete your day</p>
+            <p className="mt-1 text-sm text-white/50">
+              Mood and sleep are required to track your wellbeing.
+            </p>
+          </div>
+
+          {/* Mood */}
+          <div className="mb-5">
+            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">
+              How was your mood? <span className="text-[#C4963A]">*</span>
+            </p>
+            <div className="grid grid-cols-4 gap-2">
+              {MOODS.slice(0, 4).map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMood(m.value === mood ? "" : m.value)}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-2xl py-3 border transition-all",
+                    mood === m.value
+                      ? "border-[#C4963A]/60 bg-[#C4963A]/12"
+                      : "border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08]"
+                  )}
+                >
+                  <span className="text-xl leading-none">{m.emoji}</span>
+                  <span className={cn(
+                    "text-[10px] font-semibold",
+                    mood === m.value ? "text-[#C4963A]" : "text-white/40"
+                  )}>{m.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {MOODS.slice(4).map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMood(m.value === mood ? "" : m.value)}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-2xl py-3 border transition-all",
+                    mood === m.value
+                      ? "border-[#C4963A]/60 bg-[#C4963A]/12"
+                      : "border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08]"
+                  )}
+                >
+                  <span className="text-xl leading-none">{m.emoji}</span>
+                  <span className={cn(
+                    "text-[10px] font-semibold",
+                    mood === m.value ? "text-[#C4963A]" : "text-white/40"
+                  )}>{m.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sleep */}
+          <div className="mb-6">
+            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">
+              How much did you sleep? <span className="text-[#C4963A]">*</span>
+            </p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {SLEEP.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setSleep(s.value === sleep ? "" : s.value)}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-2xl py-3 border transition-all",
+                    sleep === s.value
+                      ? "border-[#C4963A]/60 bg-[#C4963A]/12"
+                      : "border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08]"
+                  )}
+                >
+                  <span className="text-xl leading-none">{s.emoji}</span>
+                  <span className={cn(
+                    "text-[9px] font-semibold",
+                    sleep === s.value ? "text-[#C4963A]" : "text-white/40"
+                  )}>{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !mood || !sleep}
+            className="w-full rounded-2xl bg-[#C4963A] py-4 text-sm font-bold text-[#13110F] disabled:opacity-50 transition-opacity hover:opacity-90"
+          >
+            {saving ? "Saving…" : "Save & continue"}
+          </button>
+          <button
+            type="button"
+            onClick={onSkip}
+            className="mt-3 w-full rounded-2xl py-2.5 text-sm font-medium text-white/35 hover:text-white/55 transition-colors"
+          >
+            Remind me later
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-// ─── CheckinSheet ─────────────────────────────────────────────────────────────
+// ─── DayMoodSummary ───────────────────────────────────────────────────────────
+// Shown below MonthStrip when a day is selected
 
-function CheckinSheet({
-  goal,
-  selectedDate,
-  allLogs,
-  existingCompletedIds,
-  onClose,
-  onSaved,
+function DayMoodSummary({
+  date,
+  log,
+  onLogNow,
 }: {
-  goal: CheckinGoal;
-  selectedDate: Date;
-  allLogs: DailyLog[];
-  existingCompletedIds: string[];
-  onClose: () => void;
-  onSaved: (newIds: string[]) => void;
+  date: Date;
+  log: DailyLog | undefined;
+  onLogNow: () => void;
 }) {
-  const [feel, setFeel] = useState("");
-  const [note, setNote] = useState("");
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const dateKey = format(selectedDate, "yyyy-MM-dd");
+  const isTodayDate = isToday(date);
+  const hasMoodSleep = !!(log?.mood && log?.sleep);
 
-  const streak = calcGoalStreak(goal.goalTasks.map((t) => t.id), allLogs);
-  const weekNum = getWeekNum(goal);
-  const alreadyLogged =
-    goal.goalTasks.length > 0 &&
-    goal.goalTasks.every((t) => existingCompletedIds.includes(t.id));
+  const mood  = MOODS.find((m) => m.value === log?.mood);
+  const sleep = SLEEP.find((s) => s.value === log?.sleep);
+
+  if (hasMoodSleep) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-cream-dark bg-cream-paper px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-lg leading-none">{mood?.emoji}</span>
+          <span className="text-sm font-medium text-ink">{mood?.label}</span>
+        </div>
+        <span className="text-cream-dark">·</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-lg leading-none">{sleep?.emoji}</span>
+          <span className="text-sm font-medium text-ink">{sleep?.label}</span>
+        </div>
+        <span className="ml-auto text-xs text-ink-muted">{format(date, "MMM d")}</span>
+      </div>
+    );
+  }
+
+  if (isTodayDate) {
+    return (
+      <button
+        type="button"
+        onClick={onLogNow}
+        className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-gold/40 bg-gold/5 px-4 py-3 text-left transition-all hover:border-gold/60 hover:bg-gold/8"
+      >
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gold/15">
+          <Moon className="h-4 w-4 text-gold" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-ink">Log today's mood & sleep</p>
+          <p className="text-xs text-ink-muted">Required daily · Takes 10 seconds</p>
+        </div>
+        <ChevronRight className="ml-auto h-4 w-4 flex-shrink-0 text-ink-muted" />
+      </button>
+    );
+  }
+
+  return null;
+}
+
+// ─── GoalIntentionPanel ───────────────────────────────────────────────────────
+// Goal card that expands to show its intentions as a checkable task list
+
+function GoalIntentionPanel({
+  goal,
+  tasks,
+  completedIds,
+  onSaved,
+  onNeedsMoodSleep,
+  date,
+  allLogs,
+  isToday: isTodayDate,
+}: {
+  goal: GoalMeta;
+  tasks: GoalTask[];
+  completedIds: Set<string>;
+  onSaved: (newIds: string[]) => void;
+  onNeedsMoodSleep: () => void;
+  date: Date;
+  allLogs: DailyLog[];
+  isToday: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [localIds, setLocalIds] = useState<Set<string>>(new Set(completedIds));
+  const [note, setNote]         = useState("");
+  const [photo, setPhoto]       = useState<string | null>(null);
+  const [saving, setSaving]     = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const dateKey = format(date, "yyyy-MM-dd");
+
+  // Sync completedIds from parent when it changes
+  useEffect(() => { setLocalIds(new Set(completedIds)); }, [completedIds]);
+
+  const doneTasks  = tasks.filter((t) => localIds.has(t.id)).length;
+  const totalTasks = tasks.length;
+  const allDone    = totalTasks > 0 && doneTasks === totalTasks;
+  const streak     = calcGoalStreak(tasks.map((t) => t.id), allLogs);
+
+  const toggleTask = (taskId: string) => {
+    setLocalIds((prev) => {
+      const next = new Set(prev);
+      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+      return next;
+    });
+  };
 
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -166,16 +391,18 @@ function CheckinSheet({
 
   const handleSave = async () => {
     setSaving(true);
-    const newIds = [...existingCompletedIds];
-    for (const task of goal.goalTasks) {
-      if (!newIds.includes(task.id)) newIds.push(task.id);
-    }
+    const newIds = Array.from(localIds);
+
+    // Merge with any other goals' completed IDs from the existing log
+    const existingLog = allLogs.find((l) => l.date === dateKey);
+    const merged = Array.from(new Set([...(existingLog?.completedTaskIds ?? []), ...newIds]));
+
     try {
       const body: Record<string, unknown> = {
         date: dateKey,
-        completedTaskIds: newIds,
+        completedTaskIds: merged,
         dailyIntentions: [
-          { id: `ci_${goal.id}`, text: `${goal.title} check-in`, done: true },
+          { id: `ci_${goal.id}`, text: `${goal.title} check-in`, done: doneTasks > 0 },
         ],
       };
       if (note) body.reflection = note;
@@ -185,9 +412,17 @@ function CheckinSheet({
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error();
-      toast(`${goal.emoji ?? "⭐"} Check-in logged!`);
-      onSaved(newIds);
-      onClose();
+      toast(`${goal.emoji ?? "⭐"} Progress saved!`);
+      onSaved(merged);
+      setExpanded(false);
+
+      // After saving tasks today: if no mood/sleep logged, prompt
+      if (isTodayDate && doneTasks > 0) {
+        const log = allLogs.find((l) => l.date === dateKey);
+        if (!log?.mood || !log?.sleep) {
+          setTimeout(onNeedsMoodSleep, 300);
+        }
+      }
     } catch {
       toast("Failed to save", "error");
     } finally {
@@ -196,174 +431,143 @@ function CheckinSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Sheet */}
-      <div
-        className="relative w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] bg-[#13110F] text-white shadow-2xl overflow-hidden"
-        style={{ maxHeight: "92dvh" }}
+    <div className={cn(
+      "overflow-hidden rounded-xl border transition-all",
+      expanded ? "border-ink/20 shadow-sm" : "border-cream-dark bg-cream-paper hover:shadow-sm"
+    )}>
+      {/* Left accent bar + header */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-0 text-left"
       >
-        <div className="overflow-y-auto" style={{ maxHeight: "92dvh" }}>
-
-          {/* Drag handle (mobile) */}
-          <div className="flex justify-center pt-3 pb-1 sm:hidden">
-            <div className="h-1 w-10 rounded-full bg-white/20" />
-          </div>
-
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 pt-4 pb-3.5 border-b border-white/[0.07]">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-white/35">Log check-in</p>
-              <p className="mt-0.5 text-sm font-medium text-white/55">
-                {goal.title} · Week {weekNum}
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 hover:bg-white/15 transition-colors"
-            >
-              <X className="h-4 w-4 text-white/60" />
-            </button>
-          </div>
-
-          {/* Goal card */}
-          <div className="flex items-center justify-between gap-3 px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div
-                className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl text-3xl"
-                style={{ background: `${goal.color}25` }}
-              >
-                {goal.emoji ?? "⭐"}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-base font-semibold text-white">{goal.title}</p>
-                {streak > 0 && (
-                  <div className="mt-0.5 flex items-center gap-1">
-                    <Flame className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />
-                    <span className="text-sm font-semibold text-orange-400">
-                      {streak}-day streak!
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* How did it feel? */}
-          <div className="px-5 pb-5">
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">
-              How did it feel?
+        <div className="w-[3.5px] self-stretch flex-shrink-0" style={{ background: goal.color }} />
+        <div className="flex flex-1 items-center gap-3 px-3.5 py-3.5">
+          <span className="flex-shrink-0 text-xl leading-none">{goal.emoji ?? "⭐"}</span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-ink">{goal.title}</p>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              {totalTasks} intention{totalTasks !== 1 ? "s" : ""}
+              {streak > 0 && <span className="ml-2 text-orange-500">🔥 {streak}-day streak</span>}
             </p>
-            <div className="grid grid-cols-4 gap-2">
-              {FEELS.map((f) => (
+          </div>
+          {/* Progress badge */}
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {allDone ? (
+              <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-600">
+                <Check className="h-3 w-3" /> Done
+              </span>
+            ) : (
+              <span className="rounded-full bg-cream-dark px-2.5 py-1 text-xs font-semibold text-ink-muted">
+                {doneTasks}/{totalTasks}
+              </span>
+            )}
+            {expanded
+              ? <ChevronUp className="h-4 w-4 text-ink-muted" />
+              : <ChevronDown className="h-4 w-4 text-ink-muted" />
+            }
+          </div>
+        </div>
+      </button>
+
+      {/* Expanded: intention checklist */}
+      {expanded && (
+        <div className="border-t border-cream-dark">
+          {/* Progress bar */}
+          <div className="h-[2px] bg-cream-dark">
+            <div
+              className="h-full transition-all duration-300"
+              style={{
+                width: `${totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0}%`,
+                background: goal.color,
+              }}
+            />
+          </div>
+
+          {/* Task list */}
+          <div className="divide-y divide-cream-dark/50">
+            {tasks.map((task) => {
+              const done = localIds.has(task.id);
+              return (
                 <button
-                  key={f.value}
+                  key={task.id}
                   type="button"
-                  onClick={() => setFeel(f.value === feel ? "" : f.value)}
+                  onClick={() => toggleTask(task.id)}
                   className={cn(
-                    "flex flex-col items-center gap-2 rounded-2xl py-3.5 border transition-all",
-                    feel === f.value
-                      ? "border-[#C4963A]/60 bg-[#C4963A]/12"
-                      : "border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08]"
+                    "flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors",
+                    done ? "bg-emerald-500/4" : "hover:bg-cream-dark/30"
                   )}
                 >
-                  <span className="text-2xl leading-none">{f.emoji}</span>
-                  <span
-                    className={cn(
-                      "text-[11px] font-semibold",
-                      feel === f.value ? "text-[#C4963A]" : "text-white/40"
-                    )}
-                  >
-                    {f.label}
+                  <div className={cn(
+                    "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md border-2 transition-all",
+                    done
+                      ? "border-emerald-500 bg-emerald-500"
+                      : "border-ink-muted/40"
+                  )}>
+                    {done && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+                  </div>
+                  <span className={cn(
+                    "flex-1 text-sm leading-snug",
+                    done ? "text-ink-muted line-through" : "text-ink"
+                  )}>
+                    {task.text}
                   </span>
+                  {task.isRepeating && (
+                    <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide text-ink-muted/40">
+                      Daily
+                    </span>
+                  )}
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
 
-          {/* Note */}
-          <div className="px-5 pb-4">
+          {/* Note + photo + save */}
+          <div className="px-4 pb-4 pt-3 space-y-3 bg-cream/50">
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Add a note (optional)"
-              rows={3}
-              className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-[#C4963A]/30 resize-none"
+              placeholder="Add a note (optional)…"
+              rows={2}
+              className="w-full resize-none rounded-xl border border-cream-dark bg-cream-paper px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-ink-muted/60"
             />
-          </div>
 
-          {/* Photo upload */}
-          <div className="px-5 pb-5">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handlePhoto}
-            />
-            {photo ? (
-              <div className="relative overflow-hidden rounded-2xl">
-                <img src={photo} alt="Check-in" className="w-full max-h-48 object-cover" />
+            <div className="flex items-center gap-2">
+              {/* Photo */}
+              <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
+              {photo ? (
+                <div className="relative h-10 w-10 overflow-hidden rounded-lg">
+                  <img src={photo} alt="note" className="h-full w-full object-cover" />
+                  <button
+                    onClick={() => { setPhoto(null); try { localStorage.removeItem(`ci_photo_${goal.id}_${dateKey}`); } catch {} }}
+                    className="absolute inset-0 flex items-center justify-center bg-black/40"
+                  >
+                    <X className="h-3.5 w-3.5 text-white" />
+                  </button>
+                </div>
+              ) : (
                 <button
-                  onClick={() => {
-                    setPhoto(null);
-                    try { localStorage.removeItem(`ci_photo_${goal.id}_${dateKey}`); } catch {}
-                  }}
-                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 hover:bg-black/80 transition-colors"
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-dashed border-cream-dark text-ink-muted hover:border-ink-muted/60 transition-colors"
                 >
-                  <X className="h-3.5 w-3.5 text-white" />
+                  <Camera className="h-4 w-4" />
                 </button>
-              </div>
-            ) : (
+              )}
+
               <button
                 type="button"
-                onClick={() => fileRef.current?.click()}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 py-3 text-sm text-white/35 hover:border-white/30 hover:text-white/55 transition-all"
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 rounded-xl py-2.5 text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ background: goal.color, color: "#fff" }}
               >
-                <Camera className="h-4 w-4" />
-                Add a photo
+                {saving ? "Saving…" : allDone ? "✓ Save progress" : "Save progress"}
               </button>
-            )}
-          </div>
-
-          {/* Streak banner */}
-          {streak > 0 && (
-            <div className="mx-5 mb-4 flex items-center justify-center gap-2 rounded-2xl border border-orange-500/20 bg-orange-500/8 py-3">
-              <Flame className="h-4 w-4 text-orange-400" />
-              <span className="text-sm font-semibold text-orange-400">
-                {streak}-day streak! Keep it going 🔥
-              </span>
             </div>
-          )}
-
-          {/* CTA */}
-          <div className="px-5 pb-8 pt-1">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || alreadyLogged}
-              className={cn(
-                "w-full rounded-2xl py-4 text-sm font-bold transition-all",
-                alreadyLogged
-                  ? "cursor-default bg-emerald-500/18 text-emerald-400"
-                  : "bg-[#C4963A] text-[#13110F] hover:opacity-90 disabled:opacity-60"
-              )}
-            >
-              {saving
-                ? "Logging..."
-                : alreadyLogged
-                ? "✓ Already logged today"
-                : "Log check-in"}
-            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -391,7 +595,6 @@ function MonthStrip({
 
   return (
     <div className="panel-shell overflow-hidden">
-      {/* Month nav */}
       <div className="flex items-center justify-between border-b border-cream-dark px-4 py-3">
         <button onClick={onPrevWeek} className="btn-icon h-8 w-8 flex-shrink-0 rounded-full">
           <ChevronLeft className="h-4 w-4" />
@@ -409,53 +612,49 @@ function MonthStrip({
         </button>
       </div>
 
-      {/* Day cells */}
       <div className="px-3 pb-3 pt-2">
         <div className="grid grid-cols-7 gap-1">
           {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-            <div
-              key={i}
-              className="py-1 text-center text-[10px] font-bold uppercase tracking-wider text-ink-muted"
-            >
-              {d}
-            </div>
+            <div key={i} className="py-1 text-center text-[10px] font-bold uppercase tracking-wider text-ink-muted">{d}</div>
           ))}
           {weekDays.map((day) => {
             const key        = format(day, "yyyy-MM-dd");
             const log        = logMap.get(key);
             const isSelected = isSameDay(day, selectedDate);
             const isTodayDay = isToday(day);
-            const hasLog     = !!log && (log.completedTaskIds.length > 0 || !!log.mood);
+            const hasMoodSleep = !!(log?.mood && log?.sleep);
+            const hasActivity  = !!(log?.completedTaskIds?.length);
 
             return (
               <button
                 key={key}
                 onClick={() => onSelect(day)}
                 className={cn(
-                  "flex flex-col items-center gap-1.5 rounded-xl py-2.5 transition-all",
-                  isSelected
-                    ? "bg-ink"
-                    : isTodayDay
-                    ? "bg-gold/10"
-                    : "hover:bg-cream-dark/40"
+                  "relative flex flex-col items-center gap-1 rounded-xl py-2.5 transition-all",
+                  isSelected ? "bg-ink" : isTodayDay ? "bg-gold/10" : "hover:bg-cream-dark/40"
                 )}
               >
-                <span
-                  className={cn(
-                    "text-sm font-semibold leading-none",
-                    isSelected ? "text-cream-paper" : isTodayDay ? "text-gold" : "text-ink"
-                  )}
-                >
+                <span className={cn(
+                  "text-sm font-semibold leading-none",
+                  isSelected ? "text-cream-paper" : isTodayDay ? "text-gold" : "text-ink"
+                )}>
                   {format(day, "d")}
                 </span>
-                <div
-                  className={cn(
-                    "h-1 w-1 rounded-full transition-all",
-                    hasLog
-                      ? isSelected ? "bg-gold" : "bg-gold"
-                      : "bg-transparent"
+                {/* Dot indicators */}
+                <div className="flex gap-0.5">
+                  {hasMoodSleep && (
+                    <div className={cn(
+                      "h-1 w-1 rounded-full",
+                      isSelected ? "bg-gold" : "bg-gold"
+                    )} />
                   )}
-                />
+                  {hasActivity && (
+                    <div className={cn(
+                      "h-1 w-1 rounded-full",
+                      isSelected ? "bg-emerald-300" : "bg-emerald-500"
+                    )} />
+                  )}
+                </div>
               </button>
             );
           })}
@@ -465,183 +664,32 @@ function MonthStrip({
   );
 }
 
-// ─── EventCard ────────────────────────────────────────────────────────────────
-
-function EventCard({
-  goal,
-  isLogged,
-  dateLabel,
-  onLog,
-}: {
-  goal: GoalMeta;
-  isLogged: boolean;
-  dateLabel?: string;
-  onLog: () => void;
-}) {
-  return (
-    <div className="flex items-stretch overflow-hidden rounded-xl border border-cream-dark bg-cream-paper transition-all hover:shadow-sm">
-      {/* Left accent bar */}
-      <div className="w-[3.5px] flex-shrink-0" style={{ background: goal.color }} />
-
-      {/* Content */}
-      <div className="flex flex-1 items-center gap-3 px-3.5 py-3">
-        <span className="flex-shrink-0 text-xl leading-none">{goal.emoji ?? "⭐"}</span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-ink">{goal.title}</p>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            {dateLabel ? `${dateLabel} · ` : ""}Personal
-          </p>
-        </div>
-        {isLogged ? (
-          <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/12 px-3 py-1.5 text-xs font-semibold text-emerald-600">
-            <Check className="h-3 w-3" />
-            Logged
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={onLog}
-            className="flex-shrink-0 rounded-full bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-600"
-          >
-            Log
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── DayMoodPanel ─────────────────────────────────────────────────────────────
-// Compact mood+sleep logger shown when a day is selected
-
-function DayMoodPanel({
-  date,
-  existingLog,
-  onSaved,
-}: {
-  date: Date;
-  existingLog: DailyLog | undefined;
-  onSaved: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [mood, setMood]   = useState(existingLog?.mood ?? "");
-  const [sleep, setSleep] = useState(existingLog?.sleep ?? "");
-  const [saving, setSaving] = useState(false);
-
-  const pill = (active: boolean) =>
-    cn(
-      "h-8 rounded-full border px-3 text-xs font-medium transition-all whitespace-nowrap",
-      active
-        ? "border-ink bg-ink text-cream-paper"
-        : "border-cream-dark text-ink-muted hover:border-ink-muted hover:text-ink"
-    );
-
-  const handleSave = async () => {
-    if (!mood || !sleep) return;
-    setSaving(true);
-    try {
-      const existing = existingLog;
-      await fetch("/api/daily-logs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: format(date, "yyyy-MM-dd"),
-          mood,
-          sleep,
-          completedTaskIds: existing?.completedTaskIds ?? [],
-        }),
-      });
-      toast("Day logged ✓");
-      setExpanded(false);
-      onSaved();
-    } catch {
-      toast("Failed to save", "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const currentMood  = MOODS.find((m) => m.value === mood);
-  const currentSleep = SLEEP.find((s) => s.value === sleep);
-
-  return (
-    <div className="panel-shell overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3.5"
-      >
-        <div className="flex items-center gap-2.5">
-          <div>
-            <p className="text-left text-sm font-semibold text-ink">
-              {format(date, "EEEE, MMMM d")}
-            </p>
-            <div className="mt-0.5 flex items-center gap-2">
-              {currentMood  && <span className="text-xs text-ink-muted">{currentMood.emoji} {currentMood.label}</span>}
-              {currentMood && currentSleep && <span className="text-ink-muted">·</span>}
-              {currentSleep && <span className="text-xs text-ink-muted">{currentSleep.emoji} {currentSleep.label}</span>}
-              {!currentMood && !currentSleep && (
-                <span className="text-xs text-ink-muted italic">Log mood & sleep for today</span>
-              )}
-            </div>
-          </div>
-        </div>
-        {expanded
-          ? <ChevronUp className="h-4 w-4 flex-shrink-0 text-ink-muted" />
-          : <ChevronDown className="h-4 w-4 flex-shrink-0 text-ink-muted" />}
-      </button>
-
-      {expanded && (
-        <div className="border-t border-cream-dark px-4 pb-4 pt-4 space-y-4">
-          <div>
-            <p className="section-label mb-2.5">Mood</p>
-            <div className="flex flex-wrap gap-1.5">
-              {MOODS.map((m) => (
-                <button key={m.value} type="button" onClick={() => setMood(m.value)} className={pill(mood === m.value)}>
-                  {m.emoji} {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="section-label mb-2.5">Sleep</p>
-            <div className="flex flex-wrap gap-1.5">
-              {SLEEP.map((s) => (
-                <button key={s.value} type="button" onClick={() => setSleep(s.value)} className={pill(sleep === s.value)}>
-                  {s.emoji} {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !mood || !sleep}
-            className="btn-primary w-full rounded-xl disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save day log"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── CalendarView ─────────────────────────────────────────────────────────────
 
 export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
   const router = useRouter();
 
-  const [weekStart, setWeekStart] = useState(() =>
-    startOfWeek(new Date(), { weekStartsOn: 1 })
-  );
+  const [weekStart, setWeekStart]   = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [checkinGoal, setCheckinGoal]   = useState<CheckinGoal | null>(null);
+  const [showMoodPrompt, setShowMoodPrompt] = useState(false);
 
-  // Live-updated completed IDs per date (so cards update after check-in without refresh)
-  const [overrides, setOverrides] = useState<Map<string, string[]>>(() => new Map());
+  // Live overrides: date → merged completedTaskIds (updated after each save)
+  const [overrides, setOverrides] = useState<Map<string, string[]>>(() => {
+    const m = new Map<string, string[]>();
+    for (const l of allLogs) m.set(l.date, l.completedTaskIds);
+    return m;
+  });
 
-  // ── Computed ──
+  // Track saved mood/sleep per date in this session
+  const [savedMoodSleep, setSavedMoodSleep] = useState<Map<string, { mood: string; sleep: string }>>(() => {
+    const m = new Map<string, { mood: string; sleep: string }>();
+    for (const l of allLogs) {
+      if (l.mood && l.sleep) m.set(l.date, { mood: l.mood, sleep: l.sleep });
+    }
+    return m;
+  });
+
+  // ── Computed ──────────────────────────────────────────────────────────────
   const logMap = new Map(allLogs.map((l) => [l.date, l]));
 
   const tasksByGoal = new Map<string, GoalTask[]>();
@@ -651,15 +699,80 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
     tasksByGoal.set(task.goalId, arr);
   }
 
-  function getCompletedIds(date: Date): string[] {
-    const key = format(date, "yyyy-MM-dd");
-    return overrides.get(key) ?? logMap.get(key)?.completedTaskIds ?? [];
+  const todayKey = format(new Date(), "yyyy-MM-dd");
+
+  function isTodayMoodSleepLogged(): boolean {
+    if (savedMoodSleep.has(todayKey)) return true;
+    const log = logMap.get(todayKey);
+    return !!(log?.mood && log?.sleep);
   }
 
-  function isGoalLogged(goal: GoalMeta, date: Date): boolean {
-    const ids       = getCompletedIds(date);
-    const goalTasks = tasksByGoal.get(goal.id) ?? [];
-    return goalTasks.length > 0 && goalTasks.some((t) => ids.includes(t.id));
+  function hasTodayCompletions(): boolean {
+    const ids = overrides.get(todayKey) ?? logMap.get(todayKey)?.completedTaskIds ?? [];
+    return ids.length > 0;
+  }
+
+  function needsMoodSleepPrompt(): boolean {
+    return hasTodayCompletions() && !isTodayMoodSleepLogged();
+  }
+
+  // ── Navigation guard ───────────────────────────────────────────────────────
+  // Intercept link/button clicks to other pages while on /calendar
+  useEffect(() => {
+    // Update global flag so sidebar can check it
+    (window as unknown as Record<string, unknown>)._calendarNeedsMoodSleep = needsMoodSleepPrompt();
+  });
+
+  useEffect(() => {
+    // beforeunload: browser close / refresh
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (needsMoodSleepPrompt()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+
+    // In-app link interception (capture phase catches <a> clicks before Next.js routing)
+    const handleClick = (e: MouseEvent) => {
+      if (!needsMoodSleepPrompt()) return;
+      const anchor = (e.target as HTMLElement).closest("a[href]");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href") ?? "";
+      if (href === "/calendar" || href.startsWith("/calendar?") || href.startsWith("#")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setShowMoodPrompt(true);
+    };
+
+    // Listen for external trigger (sidebar button dispatch)
+    const handleExternalTrigger = () => {
+      if (needsMoodSleepPrompt()) setShowMoodPrompt(true);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleClick, true);
+    window.addEventListener("northstar:show-mood-sleep-prompt", handleExternalTrigger);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleClick, true);
+      window.removeEventListener("northstar:show-mood-sleep-prompt", handleExternalTrigger);
+    };
+  });
+
+  // ── Prompt on load if already has completions but no mood/sleep ────────────
+  useEffect(() => {
+    const skipDate = localStorage.getItem(skipKey(todayKey));
+    if (skipDate === todayKey) return;
+    if (!needsMoodSleepPrompt()) return;
+    const t = setTimeout(() => setShowMoodPrompt(true), 800);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function getCompletedIds(date: Date): Set<string> {
+    const key = format(date, "yyyy-MM-dd");
+    return new Set(overrides.get(key) ?? logMap.get(key)?.completedTaskIds ?? []);
   }
 
   function getActiveGoals(date: Date): GoalMeta[] {
@@ -668,13 +781,28 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
     );
   }
 
+  const handleSaved = (date: Date, newIds: string[]) => {
+    const key = format(date, "yyyy-MM-dd");
+    setOverrides((prev) => new Map(prev).set(key, newIds));
+    router.refresh();
+  };
+
+  const handleMoodSleepSaved = (mood: string, sleep: string) => {
+    setSavedMoodSleep((prev) => new Map(prev).set(todayKey, { mood, sleep }));
+    setShowMoodPrompt(false);
+    router.refresh();
+  };
+
+  const handleMoodSleepSkip = () => {
+    try { localStorage.setItem(skipKey(todayKey), todayKey); } catch {}
+    setShowMoodPrompt(false);
+  };
+
+  // ── Build sections ─────────────────────────────────────────────────────────
   const today = new Date();
   const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
-
-  // Today's events
   const todayGoals = getActiveGoals(today);
 
-  // This week (remaining days, not today)
   const weekSections: { date: Date; dayGoals: GoalMeta[] }[] = [];
   for (let i = 1; i <= 6; i++) {
     const d = addDays(today, i);
@@ -683,7 +811,6 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
     if (dayGoals.length > 0) weekSections.push({ date: d, dayGoals });
   }
 
-  // Upcoming (next 2 weeks after this week) — deduplicated per goal (show once per goal)
   const upcomingGoalIds = new Set<string>();
   const upcomingGoals: GoalMeta[] = [];
   const upcomingStart = addDays(weekEnd, 1);
@@ -697,26 +824,23 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
     }
   }
 
-  const handleLog = useCallback(
-    (goal: GoalMeta, date: Date) => {
-      setSelectedDate(date);
-      setCheckinGoal({ ...goal, goalTasks: tasksByGoal.get(goal.id) ?? [] });
-    },
-    [tasksByGoal]
-  );
-
-  const handleSaved = (date: Date, newIds: string[]) => {
-    const key = format(date, "yyyy-MM-dd");
-    setOverrides((prev) => new Map(prev).set(key, newIds));
-    router.refresh();
-  };
-
   const hasAnyGoals = goals.length > 0 && tasks.length > 0;
+  const selectedKey = format(selectedDate, "yyyy-MM-dd");
+  const selectedLog = logMap.get(selectedKey);
+
+  // Merge saved mood/sleep into selectedLog for display
+  const displayLog = selectedLog
+    ? {
+        ...selectedLog,
+        mood: savedMoodSleep.get(selectedKey)?.mood ?? selectedLog.mood,
+        sleep: savedMoodSleep.get(selectedKey)?.sleep ?? selectedLog.sleep,
+      }
+    : undefined;
 
   return (
-    <div className="space-y-5 animate-page-in">
+    <div className="space-y-4 animate-page-in">
 
-      {/* ── Month strip ─────────────────────────────────── */}
+      {/* ── Month strip ───────────────────────────────────── */}
       <MonthStrip
         selectedDate={selectedDate}
         onSelect={setSelectedDate}
@@ -726,57 +850,63 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
         allLogs={allLogs}
       />
 
-      {/* ── Day mood logger ─────────────────────────────── */}
-      <DayMoodPanel
+      {/* ── Selected day mood/sleep summary ───────────────── */}
+      <DayMoodSummary
         date={selectedDate}
-        existingLog={logMap.get(format(selectedDate, "yyyy-MM-dd"))}
-        onSaved={() => router.refresh()}
+        log={displayLog as DailyLog | undefined}
+        onLogNow={() => setShowMoodPrompt(true)}
       />
 
-      {/* ── Today ───────────────────────────────────────── */}
+      {/* ── Today ─────────────────────────────────────────── */}
       <section>
-        <p className="section-label mb-3">
-          Today — {format(today, "MMMM d")}
-        </p>
+        <p className="section-label mb-3">Today — {format(today, "MMMM d")}</p>
         {todayGoals.length === 0 ? (
           <div className="panel-shell flex flex-col items-center gap-2 py-10 text-center">
             <p className="text-3xl">📅</p>
-            <p className="text-sm font-medium text-ink">No events scheduled today</p>
-            <p className="text-xs text-ink-soft">
-              Add intentions to your goals to see them here.
-            </p>
+            <p className="text-sm font-medium text-ink">No goals scheduled today</p>
+            <p className="text-xs text-ink-soft">Add intentions to your goals to see them here.</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {todayGoals.map((goal) => (
-              <EventCard
+              <GoalIntentionPanel
                 key={goal.id}
                 goal={goal}
-                isLogged={isGoalLogged(goal, today)}
-                onLog={() => handleLog(goal, today)}
+                tasks={tasksByGoal.get(goal.id) ?? []}
+                completedIds={getCompletedIds(today)}
+                onSaved={(newIds) => handleSaved(today, newIds)}
+                onNeedsMoodSleep={() => setShowMoodPrompt(true)}
+                date={today}
+                allLogs={allLogs}
+                isToday={true}
               />
             ))}
           </div>
         )}
       </section>
 
-      {/* ── This week ───────────────────────────────────── */}
+      {/* ── This week ─────────────────────────────────────── */}
       {weekSections.length > 0 && (
         <section>
           <p className="section-label mb-3">This week</p>
           <div className="space-y-4">
             {weekSections.map(({ date, dayGoals }) => (
               <div key={format(date, "yyyy-MM-dd")}>
-                <p className="mb-1.5 px-0.5 text-xs font-semibold text-ink-muted">
+                <p className="mb-2 px-0.5 text-xs font-semibold text-ink-muted">
                   {format(date, "EEEE, d MMM")}
                 </p>
                 <div className="space-y-2">
                   {dayGoals.map((goal) => (
-                    <EventCard
+                    <GoalIntentionPanel
                       key={goal.id}
                       goal={goal}
-                      isLogged={isGoalLogged(goal, date)}
-                      onLog={() => handleLog(goal, date)}
+                      tasks={tasksByGoal.get(goal.id) ?? []}
+                      completedIds={getCompletedIds(date)}
+                      onSaved={(newIds) => handleSaved(date, newIds)}
+                      onNeedsMoodSleep={() => {}}
+                      date={date}
+                      allLogs={allLogs}
+                      isToday={false}
                     />
                   ))}
                 </div>
@@ -786,44 +916,46 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
         </section>
       )}
 
-      {/* ── Upcoming ────────────────────────────────────── */}
+      {/* ── Upcoming ──────────────────────────────────────── */}
       {upcomingGoals.length > 0 && (
         <section>
           <p className="section-label mb-3">Upcoming</p>
           <div className="space-y-2">
             {upcomingGoals.map((goal) => (
-              <EventCard
+              <div
                 key={goal.id}
-                goal={goal}
-                isLogged={false}
-                dateLabel="Next week"
-                onLog={() => {}}
-              />
+                className="flex items-center gap-3 overflow-hidden rounded-xl border border-cream-dark bg-cream-paper px-3.5 py-3 opacity-60"
+              >
+                <div className="w-[3.5px] self-stretch flex-shrink-0 rounded-full" style={{ background: goal.color }} />
+                <span className="text-xl leading-none">{goal.emoji ?? "⭐"}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-ink">{goal.title}</p>
+                  <p className="text-xs text-ink-muted">Next week · {(tasksByGoal.get(goal.id) ?? []).length} intentions</p>
+                </div>
+              </div>
             ))}
           </div>
         </section>
       )}
 
-      {/* ── Empty state (no goals at all) ───────────────── */}
+      {/* ── Empty state ───────────────────────────────────── */}
       {!hasAnyGoals && (
         <div className="panel-shell flex flex-col items-center gap-3 py-16 text-center">
           <p className="text-4xl">🌟</p>
-          <p className="text-base font-semibold text-ink">No events scheduled</p>
+          <p className="text-base font-semibold text-ink">No intentions scheduled</p>
           <p className="text-sm text-ink-muted">
-            Add intentions to your goals to see them here.
+            When you create goals with intentions, they'll appear here.
           </p>
         </div>
       )}
 
-      {/* ── Check-in sheet ──────────────────────────────── */}
-      {checkinGoal && (
-        <CheckinSheet
-          goal={checkinGoal}
-          selectedDate={selectedDate}
-          allLogs={allLogs}
-          existingCompletedIds={getCompletedIds(selectedDate)}
-          onClose={() => setCheckinGoal(null)}
-          onSaved={(newIds) => handleSaved(selectedDate, newIds)}
+      {/* ── Mood/Sleep prompt modal ───────────────────────── */}
+      {showMoodPrompt && (
+        <MoodSleepPrompt
+          dateKey={todayKey}
+          existingLog={logMap.get(todayKey)}
+          onSaved={handleMoodSleepSaved}
+          onSkip={handleMoodSleepSkip}
         />
       )}
     </div>
