@@ -4,6 +4,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { friendsService } from "@/server/services/friends.service";
+import { db } from "@/lib/db";
+import { circleConnections } from "@/drizzle/schema";
+import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 const bodySchema = z.object({
@@ -38,5 +41,23 @@ export async function PATCH(
     const message = err instanceof Error ? err.message : "Failed to update request";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+// DELETE — requester cancels their own outgoing invite
+export async function DELETE(
+  _request: NextRequest,
+  ctx: RouteContext
+): Promise<NextResponse> {
+  const userId = await getSessionUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { connectionId } = await ctx.params;
+  await db
+    .delete(circleConnections)
+    .where(
+      and(eq(circleConnections.id, connectionId), eq(circleConnections.requesterId, userId))
+    );
+
+  return NextResponse.json({ ok: true });
 }
 
