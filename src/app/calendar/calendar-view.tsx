@@ -312,7 +312,7 @@ function DayMoodSummary({
           <Moon className="h-4 w-4 text-gold" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-ink">Log today's mood & sleep</p>
+          <p className="text-sm font-semibold text-ink">Log today&apos;s mood &amp; sleep</p>
           <p className="text-xs text-ink-muted">Required daily · Takes 10 seconds</p>
         </div>
         <ChevronRight className="ml-auto h-4 w-4 flex-shrink-0 text-ink-muted" />
@@ -944,7 +944,7 @@ export function CalendarView({ tasks, goals, allLogs }: CalendarViewProps) {
           <p className="text-4xl">🌟</p>
           <p className="text-base font-semibold text-ink">No intentions scheduled</p>
           <p className="text-sm text-ink-muted">
-            When you create goals with intentions, they'll appear here.
+            When you create goals with intentions, they&apos;ll appear here.
           </p>
         </div>
       )}
