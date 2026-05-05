@@ -4,7 +4,7 @@
 // Celebration popup modal that appears when a user earns a badge/achievement.
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { X, Sparkles } from "lucide-react";
 
 const BADGE_CONFIG: Record<string, { emoji: string; name: string; color: string; description: string }> = {

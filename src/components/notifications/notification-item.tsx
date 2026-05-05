@@ -9,10 +9,11 @@
 //   default → simple icon + text row
 
 import { useState } from "react";
+import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import {
-  CheckCircle2, XCircle, Users, Trophy, Flame, Zap,
-  MapPin, Briefcase, ArrowRight, UserCheck,
+  CheckCircle2, XCircle, Users, Flame, Zap,
+  MapPin, ArrowRight, UserCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils/index";
 import { toast } from "@/components/ui/toaster";
@@ -335,9 +336,9 @@ function GroupRejectedCard({ notification }: { notification: Notification }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-ink">Request to {groupName} not approved</p>
         <p className="mt-0.5 text-xs text-ink-muted">Explore other public groups that match your interests.</p>
-        <a href="/groups" className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-gold">
+        <Link href="/groups" className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-gold">
           Browse groups <ArrowRight className="h-3 w-3" />
-        </a>
+        </Link>
       </div>
       <span className="shrink-0 text-[10px] text-ink-muted">
         {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}

@@ -60,7 +60,6 @@ export function NotificationPanel({
     }),
   };
 
-  const sorted = [...groups.actionable, ...groups.rest];
 
   return (
     <>
