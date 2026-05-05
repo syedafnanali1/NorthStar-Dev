@@ -6,8 +6,14 @@ import { ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatInfoModal } from "./stat-info-modal";
 import { StreakVisualization } from "./streak-visualization";
-import { ActivityVisualization } from "./activity-visualization";
 import type { MomentumData } from "@/server/services/analytics.service";
+
+const BADGE_EMOJI: Record<string, string> = {
+  first_goal_created: "🎯", first_checkin: "✅", streak_7: "🔥",
+  streak_30: "🏆", streak_60: "💎", streak_100: "👑",
+  circle_friend_added: "🤝", goal_completed: "🌟", goals_5: "🎖️",
+  early_bird: "🌅", group_joined: "🏘️", level_up: "⭐",
+};
 
 interface MomentumCardProps {
   momentum: MomentumData;
@@ -145,6 +151,16 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
   const [displayScore, setDisplayScore] = useState(0);
   const [selectedStat, setSelectedStat] = useState<StatInfo | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [glance, setGlance] = useState<{ activeGoals: number; badgesEarned: number; latestBadgeKey: string | null } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/analytics/glance")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { activeGoals: number; badgesEarned: number; latestBadgeKey: string | null } | null) => {
+        if (d) setGlance({ activeGoals: d.activeGoals, badgesEarned: d.badgesEarned, latestBadgeKey: d.latestBadgeKey });
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -175,9 +191,21 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
     momentum.score >= 20 ? "Time to reignite. You know what to do." :
     "Day one is the most important day. Start.";
 
-  const activeWeekdays = momentum.weeklyActivity.filter((d) => d.hasLog).length;
+  const badgeEmoji = glance?.latestBadgeKey
+    ? (BADGE_EMOJI[glance.latestBadgeKey] ?? "🏅")
+    : "🏅";
 
   const statClickHandlers = [
+    {
+      emoji: "🎯",
+      value: `${glance?.activeGoals ?? "—"}`,
+      label: "Active Goals",
+      onClick: () => handleStatClick({
+        title: "Active Goals",
+        description: "The number of goals you're currently working toward. Keep this focused — fewer goals done well beats many goals done poorly.",
+        value: `${glance?.activeGoals ?? 0} active`,
+      }),
+    },
     {
       emoji: "🔥",
       value: `${momentum.streakDays}d`,
@@ -195,41 +223,24 @@ export function MomentumCard({ momentum, className }: MomentumCardProps) {
       }),
     },
     {
-      emoji: "📅",
-      value: `${activeWeekdays}/7`,
-      label: "Week",
-      onClick: () => handleStatClick({
-        title: "Week",
-        description: "How many days this week you've taken action on your goals. Aim for 5 out of 7 as a strong baseline — showing up most days beats a perfect record you can't maintain.",
-        value: `${activeWeekdays} active days`,
-        visual: (
-          <div className="flex flex-col items-center gap-4">
-            <WeekGridIllustration active={activeWeekdays} />
-            <ActivityVisualization weeklyActivity={momentum.weeklyActivity} />
-          </div>
-        ),
-      }),
-    },
-    {
       emoji: "✅",
       value: `${Math.round(momentum.completionRate * 100)}%`,
-      label: "Rate",
+      label: "Completion",
       onClick: () => handleStatClick({
-        title: "Rate",
+        title: "Completion Rate",
         description: "The percentage of daily intentions you've actually completed. This is your follow-through score — it separates those who set goals from those who achieve them.",
         value: `${Math.round(momentum.completionRate * 100)}%`,
         visual: <RateCircleIllustration rate={Math.round(momentum.completionRate * 100)} />,
       }),
     },
     {
-      emoji: deltaPositive ? "📈" : "📉",
-      value: deltaLabel,
-      label: "Trend",
+      emoji: badgeEmoji,
+      value: `${glance?.badgesEarned ?? "—"}`,
+      label: "Badges",
       onClick: () => handleStatClick({
-        title: deltaPositive ? "Trending Up" : "Trending Down",
-        description: `Your momentum score this week compared to last week. ${deltaPositive ? "You're building consistent progress — keep showing up." : "A dip is normal. What matters is your next action."}`,
-        value: deltaLabel,
-        visual: <TrendArrowIllustration positive={deltaPositive} />,
+        title: "Badges Earned",
+        description: "Badges are awarded for hitting milestones — streaks, completed goals, and consistency. Each one marks a real achievement.",
+        value: `${glance?.badgesEarned ?? 0} earned`,
       }),
     },
   ];

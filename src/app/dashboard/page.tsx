@@ -16,7 +16,6 @@ import { db } from "@/lib/db";
 import { circleConnections, users } from "@/drizzle/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { TrialBanner } from "@/components/ui/trial-banner";
-import { StatsGlanceCards } from "@/components/analytics/stats-glance-cards";
 import { CrossTabNudge } from "@/components/ui/cross-tab-nudge";
 import { DailyPulseCard } from "./daily-pulse-card";
 import { AiCoachNotesCard } from "./ai-coach-notes-card";
@@ -117,9 +116,6 @@ export default async function DashboardPage() {
           <DailyPulseCard />
           <AiCoachNotesCard />
         </div>
-
-        {/* ── Glance Stats (4-col) ──────────────────────────────── */}
-        <StatsGlanceCards />
 
         {/* ── Momentum ──────────────────────────────────────────── */}
         {momentum ? <MomentumCard momentum={momentum} /> : null}
