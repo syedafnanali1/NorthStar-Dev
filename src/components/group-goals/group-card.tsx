@@ -3,20 +3,28 @@
 // src/components/group-goals/group-card.tsx
 
 import Link from "next/link";
-import { Crown, Users, Globe, Lock } from "lucide-react";
+import { Crown, Users, Globe, Lock, Flame } from "lucide-react";
 import { GroupIconDisplay } from "./group-icon-picker";
+import { cn } from "@/lib/utils/index";
 import type { GroupWithMeta } from "@/server/services/groups.service";
 
 interface GroupCardProps {
   group: GroupWithMeta;
   currentUserId: string;
+  todayCheckInRate?: number | null;
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
+export const CATEGORY_COLORS: Record<string, string> = {
   health: "#4caf82", fitness: "#e07d3a", finance: "#3a7fe0",
   mindset: "#8b5cf6", writing: "#d97706", reading: "#92644a",
   career: "#0891b2", lifestyle: "#db2777", creativity: "#7c3aed",
   community: "#059669", other: "#C4963A",
+};
+
+export const CATEGORY_EMOJI: Record<string, string> = {
+  health: "🌿", fitness: "💪", finance: "💰", mindset: "🧠",
+  writing: "✍️", reading: "📚", career: "🚀", lifestyle: "🌟",
+  creativity: "🎨", community: "🤝", other: "✨",
 };
 
 function MemberAvatarStack({ members }: { members: GroupWithMeta["members"] }) {
@@ -54,7 +62,7 @@ function MemberAvatarStack({ members }: { members: GroupWithMeta["members"] }) {
   );
 }
 
-export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardProps) {
+export function GroupCard({ group, currentUserId: _currentUserId, todayCheckInRate }: GroupCardProps) {
   const href = group.id.startsWith("grp_")
     ? `/groups/community/${group.id}`
     : `/groups/${group.id}`;
@@ -64,29 +72,34 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
   const accent = category ? (CATEGORY_COLORS[category] ?? "#C4963A") : "#C4963A";
   const owner = group.members.find((m) => m.role === "owner") ?? group.members[0];
   const isPublic = group.type === "public";
+  const checkedInCount = todayCheckInRate != null ? Math.round(todayCheckInRate * group.memberCount) : null;
 
   return (
     <div className="group/card relative flex flex-col overflow-hidden rounded-2xl border border-cream-dark bg-cream-paper shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
 
       {/* Gradient header */}
       <div
-        className="relative h-24 w-full overflow-hidden"
+        className="relative h-20 w-full overflow-hidden"
         style={{
-          background: `linear-gradient(135deg, ${accent}22 0%, ${accent}44 100%)`,
-          borderBottom: `1px solid ${accent}33`,
+          background: `linear-gradient(135deg, ${accent}18 0%, ${accent}35 100%)`,
+          borderBottom: `1px solid ${accent}30`,
         }}
       >
-        {/* Thin accent stripe */}
         <div className="absolute inset-x-0 top-0 h-0.5" style={{ background: accent }} />
 
-        {/* Icon — left-aligned, vertically centred */}
+        {/* Icon */}
         <div className="absolute left-4 top-1/2 -translate-y-1/2">
           <GroupIconDisplay icon={icon} size="md" accent={accent} />
         </div>
 
-        {/* Visibility badge — top-right */}
-        <div className="absolute right-3 top-3">
-          <span className="inline-flex items-center gap-1 rounded-full bg-cream-paper/90 px-2 py-0.5 text-[10px] font-medium text-ink-muted backdrop-blur-sm">
+        {/* Visibility badge */}
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+          {category && (
+            <span className="rounded-full bg-cream-paper/85 px-2 py-0.5 text-[10px] font-medium text-ink-muted backdrop-blur-sm">
+              {CATEGORY_EMOJI[category] ?? "✨"} {category}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1 rounded-full bg-cream-paper/85 px-2 py-0.5 text-[10px] font-medium text-ink-muted backdrop-blur-sm">
             {isPublic ? <Globe className="h-2.5 w-2.5" /> : <Lock className="h-2.5 w-2.5" />}
             {isPublic ? "Public" : "Private"}
           </span>
@@ -95,12 +108,6 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
 
       {/* Body */}
       <div className="flex flex-1 flex-col p-4">
-
-        {/* Category */}
-        {category && (
-          <p className="section-label mb-1">{category}</p>
-        )}
-
         {/* Name */}
         <Link
           href={href}
@@ -118,7 +125,7 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
 
         {/* Owner */}
         {owner && (
-          <div className="mt-2.5 flex items-center gap-1.5">
+          <div className="mt-2 flex items-center gap-1.5">
             <Crown className="h-3 w-3 text-gold" />
             <span className="text-xs text-ink-muted">
               by{" "}
@@ -138,8 +145,32 @@ export function GroupCard({ group, currentUserId: _currentUserId }: GroupCardPro
 
         <div className="flex-1" />
 
-        {/* Footer — members + open button */}
-        <div className="mt-3 flex items-center justify-between border-t border-cream-dark pt-3">
+        {/* Today's check-in rate bar */}
+        {todayCheckInRate != null && (
+          <div className="mt-3 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1 text-[10px] font-medium text-ink-muted">
+                <Flame className="h-2.5 w-2.5 text-amber-500" />
+                Today&apos;s check-ins
+              </span>
+              <span className="text-[10px] font-semibold text-ink">
+                {checkedInCount}/{group.memberCount}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-cream-dark">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-500",
+                  todayCheckInRate >= 0.7 ? "bg-emerald-500" : todayCheckInRate >= 0.4 ? "bg-amber-500" : "bg-cream-dark"
+                )}
+                style={{ width: `${Math.max(todayCheckInRate * 100, todayCheckInRate > 0 ? 8 : 0)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className={cn("flex items-center justify-between border-t border-cream-dark pt-3", todayCheckInRate != null ? "mt-2" : "mt-3")}>
           <div className="flex items-center gap-2.5">
             <MemberAvatarStack members={group.members} />
             <span className="flex items-center gap-1 text-xs text-ink-muted">

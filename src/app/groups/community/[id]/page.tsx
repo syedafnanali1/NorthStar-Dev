@@ -12,6 +12,8 @@ import { GroupProfileClient } from "./group-profile-client";
 import { GroupIconDisplay } from "@/components/group-goals/group-icon-picker";
 import { GroupGoalsClient } from "./group-goals-client";
 import { GroupCommunityTabs } from "./group-community-tabs";
+import { MemberCheckInGrid } from "./member-checkin-grid";
+import { GroupActivityFeed } from "./group-activity-feed";
 import { groupGoalItemsService } from "@/server/services/group-goal-items.service";
 import { groupChatService } from "@/server/services/group-chat.service";
 import { cn, initials } from "@/lib/utils/index";
@@ -27,10 +29,12 @@ import {
   Star,
   Bell,
   ChevronRight,
+  Activity,
+  LayoutGrid,
 } from "lucide-react";
 import { db } from "@/lib/db";
-import { groups as groupsTable, groupMembers } from "@/drizzle/schema";
-import { and, avg, eq } from "drizzle-orm";
+import { groups as groupsTable, groupMembers, dailyLogs } from "@/drizzle/schema";
+import { and, avg, eq, inArray } from "drizzle-orm";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -146,6 +150,18 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
       )
     );
   const avgRating = ratingRow?.avgRating ? Math.round(Number(ratingRow.avgRating) * 10) / 10 : null;
+
+  // Today's check-ins: which members logged a daily log today
+  const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const memberIds = group.members.map((m) => m.id);
+  const checkedInTodayIds = new Set<string>();
+  if (memberIds.length > 0) {
+    const rows = await db
+      .select({ userId: dailyLogs.userId })
+      .from(dailyLogs)
+      .where(and(inArray(dailyLogs.userId, memberIds), eq(dailyLogs.date, todayStr)));
+    for (const r of rows) checkedInTodayIds.add(r.userId);
+  }
 
   // Pending join requests count (owners only, for sidebar badge)
   let pendingCount = 0;
@@ -276,6 +292,7 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
             <div className="mt-5">
               <GroupProfileClient
                 groupId={group.id}
+                groupName={group.name}
                 myRole={group.myRole}
                 myJoinRequestStatus={group.myJoinRequestStatus}
                 groupType={group.type}
@@ -351,7 +368,7 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
 
             {/* Goals section */}
             {(isMember || group.type === "public") && (
-              <section className="space-y-4">
+              <section className="overflow-hidden rounded-3xl border border-cream-dark bg-cream-paper p-5 shadow-sm">
                 <GroupGoalsClient
                   groupId={group.id}
                   goals={groupGoals}
@@ -362,14 +379,50 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
               </section>
             )}
 
-            {/* Group Feed (chat + activity) */}
+            {/* Member check-in grid */}
+            {(isMember || group.type === "public") && group.members.length > 0 && (
+              <section className="overflow-hidden rounded-3xl border border-cream-dark bg-cream-paper p-5 shadow-sm">
+                <div className="mb-4 flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500">
+                    <LayoutGrid className="h-3.5 w-3.5 text-white" />
+                  </div>
+                  <h2 className="font-serif text-xl font-semibold text-ink">Today&apos;s Check-ins</h2>
+                </div>
+                <MemberCheckInGrid
+                  groupId={group.id}
+                  members={group.members.map((m) => ({
+                    id: m.id,
+                    name: m.name,
+                    username: m.username,
+                    image: m.image,
+                    role: m.role,
+                  }))}
+                  checkedInTodayIds={Array.from(checkedInTodayIds)}
+                />
+              </section>
+            )}
+
+            {/* Activity feed */}
             {(isMember || group.type === "public") && (
-              <section className="space-y-4">
-                <div className="flex items-center gap-2">
+              <section className="overflow-hidden rounded-3xl border border-cream-dark bg-cream-paper p-5 shadow-sm">
+                <div className="mb-4 flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink">
+                    <Activity className="h-3.5 w-3.5 text-cream-paper" />
+                  </div>
+                  <h2 className="font-serif text-xl font-semibold text-ink">Activity</h2>
+                </div>
+                <GroupActivityFeed groupId={group.id} isMember={isMember} />
+              </section>
+            )}
+
+            {/* Group Chat Feed */}
+            {(isMember || group.type === "public") && (
+              <section className="overflow-hidden rounded-3xl border border-cream-dark bg-cream-paper p-5 shadow-sm">
+                <div className="mb-4 flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink">
                     <span className="text-[14px] leading-none text-cream-paper">💬</span>
                   </div>
-                  <h2 className="font-serif text-xl font-semibold text-ink">Group Feed</h2>
+                  <h2 className="font-serif text-xl font-semibold text-ink">Group Chat</h2>
                 </div>
                 <GroupCommunityTabs
                   groupId={group.id}
@@ -415,6 +468,12 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
                     {group.memberCount}
                   </span>
                 </div>
+                {/* Today's check-in summary */}
+                {(isMember || group.type === "public") && checkedInTodayIds.size > 0 && (
+                  <p className="mt-1.5 text-[11px] text-ink-muted">
+                    <span className="font-semibold text-emerald-600">{checkedInTodayIds.size}</span> of {group.memberCount} checked in today
+                  </p>
+                )}
               </div>
               <div className="p-4">
                 {group.type === "private" && !isMember ? (
@@ -425,27 +484,40 @@ export default async function CommunityGroupProfilePage({ params }: PageProps) {
                   <p className="text-center text-sm text-ink-muted">No members yet.</p>
                 ) : (
                   <div className="space-y-3">
-                    {group.members.map((m) => (
-                      <div key={m.id} className="flex items-center gap-3">
-                        <Avatar name={m.name} image={m.image} size="sm" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-ink">
-                            {m.name ?? m.username ?? "Member"}
-                          </p>
-                          {m.username && (
-                            <p className="truncate text-xs text-ink-muted">@{m.username}</p>
+                    {group.members.map((m) => {
+                      const checkedIn = checkedInTodayIds.has(m.id);
+                      return (
+                        <div key={m.id} className="flex items-center gap-3">
+                          {/* Avatar with check-in indicator */}
+                          <div className="relative shrink-0">
+                            <Avatar name={m.name} image={m.image} size="sm" />
+                            {checkedIn && (
+                              <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 ring-1 ring-cream-paper">
+                                <svg viewBox="0 0 10 8" className="h-2 w-2 fill-none stroke-white stroke-[1.5]">
+                                  <path d="M1 4l2.5 2.5L9 1" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              </span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-ink">
+                              {m.name ?? m.username ?? "Member"}
+                            </p>
+                            {m.username && (
+                              <p className="truncate text-xs text-ink-muted">@{m.username}</p>
+                            )}
+                          </div>
+                          {m.role === "owner" && (
+                            <Crown className="h-3.5 w-3.5 shrink-0 text-gold" />
+                          )}
+                          {m.role === "admin" && (
+                            <span className="shrink-0 rounded-full bg-cream-dark px-2 py-0.5 text-[0.6rem] font-semibold text-ink-muted">
+                              Admin
+                            </span>
                           )}
                         </div>
-                        {m.role === "owner" && (
-                          <Crown className="h-3.5 w-3.5 shrink-0 text-gold" />
-                        )}
-                        {m.role === "admin" && (
-                          <span className="shrink-0 rounded-full bg-cream-dark px-2 py-0.5 text-[0.6rem] font-semibold text-ink-muted">
-                            Admin
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                     {group.memberCount > group.members.length && (
                       <p className="pt-1 text-center text-xs text-ink-muted">
                         +{group.memberCount - group.members.length} more members
