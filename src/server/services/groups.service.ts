@@ -763,15 +763,31 @@ export const groupsService = {
         set: { status: "pending", note: note?.trim() ?? null, requestedAt: new Date() },
       });
 
-    // Get requester info for notification
+    // Get requester full profile for rich notification card
     const [requester] = await db
-      .select({ name: users.name })
+      .select({
+        name: users.name,
+        username: users.username,
+        image: users.image,
+        bio: users.bio,
+        location: users.location,
+        jobTitle: users.jobTitle,
+        currentStreak: users.currentStreak,
+        momentumScore: users.momentumScore,
+      })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
     const requesterName = requester?.name ?? "Someone";
 
-    // Notify all owners and admins
+    // Get join request ID for action buttons in notification
+    const [joinReq] = await db
+      .select({ id: groupJoinRequests.id })
+      .from(groupJoinRequests)
+      .where(and(eq(groupJoinRequests.groupId, groupId), eq(groupJoinRequests.requesterId, userId)))
+      .limit(1);
+
+    // Notify all owners and admins with rich metadata
     const admins = await db
       .select({ userId: groupMembers.userId })
       .from(groupMembers)
@@ -784,16 +800,35 @@ export const groupsService = {
       );
 
     const appUrl = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
-    const groupUrl = `${appUrl}/groups/${groupId}`;
+    const groupUrl = `${appUrl}/groups/community/${groupId}`;
 
     await Promise.allSettled(
       admins.map((admin) =>
         notificationsService.createNotification(
           admin.userId,
           "group_message",
-          "New join request",
           `${requesterName} wants to join "${group.name}"`,
-          groupUrl
+          requester?.bio
+            ? `"${requester.bio.slice(0, 80)}${requester.bio.length > 80 ? "…" : ""}"`
+            : `Review their request and approve or decline.`,
+          groupUrl,
+          {
+            metadata: {
+              subtype: "group_join_request",
+              joinRequestId: joinReq?.id ?? "",
+              groupId,
+              groupName: group.name,
+              requesterId: userId,
+              requesterName: requester?.name,
+              requesterUsername: requester?.username,
+              requesterImage: requester?.image,
+              requesterBio: requester?.bio,
+              requesterLocation: requester?.location,
+              requesterJobTitle: requester?.jobTitle,
+              requesterStreak: requester?.currentStreak,
+              requesterMomentum: requester?.momentumScore,
+            },
+          }
         )
       )
     );
@@ -934,14 +969,21 @@ export const groupsService = {
       metadata: { approvedBy: adminId },
     });
 
-    // Notify requester
+    // Notify requester with rich metadata for welcome card
     const appUrl = process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000";
     await notificationsService.createNotification(
       req.requesterId,
       "group_message",
-      "Join request approved",
-      `Your request to join "${group?.name ?? "the group"}" was approved!`,
-      `${appUrl}/groups/${req.groupId}`
+      `🎉 You're in! Welcome to "${group?.name ?? "the group"}"`,
+      `Your join request was approved. Tap to open the group and start participating.`,
+      `${appUrl}/groups/community/${req.groupId}`,
+      {
+        metadata: {
+          subtype: "group_join_approved",
+          groupId: req.groupId,
+          groupName: group?.name ?? "the group",
+        },
+      }
     );
 
     // Recalculate popularity score
@@ -995,9 +1037,16 @@ export const groupsService = {
     await notificationsService.createNotification(
       req.requesterId,
       "group_message",
-      "Join request declined",
-      `Your request to join "${group?.name ?? "the group"}" was not approved at this time.`,
-      `${appUrl}/groups`
+      `Your request to join "${group?.name ?? "the group"}" was not approved`,
+      `The group admin has reviewed your request. You can explore other public groups.`,
+      `${appUrl}/groups`,
+      {
+        metadata: {
+          subtype: "group_join_rejected",
+          groupId: req.groupId,
+          groupName: group?.name ?? "the group",
+        },
+      }
     );
   },
 

@@ -19,6 +19,7 @@ import { TrialBanner } from "@/components/ui/trial-banner";
 import { StatsGlanceCards } from "@/components/analytics/stats-glance-cards";
 import { CrossTabNudge } from "@/components/ui/cross-tab-nudge";
 import { DailyPulseCard } from "./daily-pulse-card";
+import { AiCoachNotesCard } from "./ai-coach-notes-card";
 
 export const metadata: Metadata = {
   title: "Your Goals",
@@ -111,11 +112,14 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Glance Stats ──────────────────────────────────────── */}
-        <StatsGlanceCards />
+        {/* ── Today's Pulse + AI Coach Notes (2-col) ───────────── */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <DailyPulseCard />
+          <AiCoachNotesCard />
+        </div>
 
-        {/* ── Daily Pulse ───────────────────────────────────────── */}
-        <DailyPulseCard />
+        {/* ── Glance Stats (4-col) ──────────────────────────────── */}
+        <StatsGlanceCards />
 
         {/* ── Momentum ──────────────────────────────────────────── */}
         {momentum ? <MomentumCard momentum={momentum} /> : null}

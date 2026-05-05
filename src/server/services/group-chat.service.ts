@@ -484,7 +484,7 @@ export const groupChatService = {
 
   // ── Circle Connection Request ───────────────────────────────────────────────
 
-  async sendCircleRequest(requesterId: string, receiverId: string): Promise<void> {
+  async sendCircleRequest(requesterId: string, receiverId: string): Promise<string> {
     if (requesterId === receiverId) throw new Error("Cannot connect with yourself.");
 
     // Check for existing connection
@@ -502,24 +502,12 @@ export const groupChatService = {
       if (existing.status === "pending") throw new Error("Request already pending.");
     }
 
-    await db
+    const [inserted] = await db
       .insert(circleConnections)
-      .values({ requesterId, receiverId, status: "pending" });
+      .values({ requesterId, receiverId, status: "pending" })
+      .returning({ id: circleConnections.id });
 
-    // Fetch requester name for notification
-    const [requester] = await db
-      .select({ name: users.name, username: users.username })
-      .from(users)
-      .where(eq(users.id, requesterId))
-      .limit(1);
-    const requesterName = requester?.name ?? requester?.username ?? "Someone";
-
-    await notificationsService.createNotification(
-      receiverId,
-      "friend_milestone",
-      `${requesterName} wants to join your circle`,
-      `${requesterName} sent you a circle connection request.`,
-      `/profile/${requester?.username ?? requesterId}`
-    );
+    // Return connection ID so caller can attach rich notification metadata
+    return inserted?.id ?? "";
   },
 };

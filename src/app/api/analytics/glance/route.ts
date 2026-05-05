@@ -1,10 +1,10 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { and, count, eq, gte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import { getSessionUserId } from "@/lib/auth/helpers";
 import { db } from "@/lib/db";
-import { goals, progressEntries, users } from "@/drizzle/schema";
+import { goals, progressEntries, users, userAchievements } from "@/drizzle/schema";
 
 export async function GET() {
   const userId = await getSessionUserId();
@@ -14,7 +14,7 @@ export async function GET() {
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
   const twoWeeksAgo = new Date(now.getTime() - 14 * 86_400_000);
 
-  const [activeGoalsNow, activeGoalsPrev, userData, progressThisWeek, progressLastWeek] = await Promise.all([
+  const [activeGoalsNow, activeGoalsPrev, userData, progressThisWeek, progressLastWeek, badgeRows, latestBadgeRow] = await Promise.all([
     db.select({ n: count() }).from(goals).where(
       and(eq(goals.userId, userId), eq(goals.isCompleted, false), eq(goals.isArchived, false))
     ),
@@ -40,12 +40,21 @@ export async function GET() {
         sql`${progressEntries.loggedAt} < ${weekAgo}`
       )
     ),
+    db.select({ n: count() }).from(userAchievements).where(eq(userAchievements.userId, userId)),
+    db
+      .select({ achievementKey: userAchievements.achievementKey })
+      .from(userAchievements)
+      .where(eq(userAchievements.userId, userId))
+      .orderBy(desc(userAchievements.earnedAt))
+      .limit(1),
   ]);
 
   const active = activeGoalsNow[0]?.n ?? 0;
   const streak = userData[0]?.currentStreak ?? 0;
   const thisWeekLogs = progressThisWeek[0]?.n ?? 0;
   const lastWeekLogs = progressLastWeek[0]?.n ?? 0;
+  const badgesEarned = badgeRows[0]?.n ?? 0;
+  const latestBadgeKey = latestBadgeRow[0]?.achievementKey ?? null;
 
   const completionRate = thisWeekLogs > 0
     ? Math.min(100, Math.round((thisWeekLogs / Math.max(active, 1)) * 100 / 7 * 100))
@@ -62,6 +71,8 @@ export async function GET() {
       activeGoalsDelta: 0,
       streakDelta: 0,
       completionRateDelta: completionRate - prevCompletionRate,
+      badgesEarned,
+      latestBadgeKey,
     },
     { headers: { "Cache-Control": "private, max-age=120" } }
   );
